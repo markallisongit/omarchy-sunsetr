@@ -1,0 +1,8 @@
+{
+  // This fragment is merged into ~/.config/omarchy/extensions/omarchy-menu.jsonc
+  // by bin/setup (see its install_menu_override function) - it is not read
+  // directly by the shell from this location. It overrides the stock
+  // trigger.toggle.nightlight menu entry to route through sunsetr-nightlight
+  // instead of Omarchy's built-in hyprsunset-based toggle.
+  "trigger.toggle.nightlight": {"icon":"󰔎","label":"Nightlight","action":"sunsetr-nightlight toggle"}
+}

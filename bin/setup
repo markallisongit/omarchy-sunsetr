@@ -1,0 +1,247 @@
+#!/bin/bash
+
+# omarchy:summary=Install or remove mark.sunsetr's Omarchy integration
+# omarchy:args=[--yes] [--uninstall]
+# omarchy:examples=bin/setup --yes
+
+set -euo pipefail
+
+PLUGIN_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)"
+SHELL_JSON="$HOME/.config/omarchy/shell.json"
+MENU_JSONC="$HOME/.config/omarchy/extensions/omarchy-menu.jsonc"
+BIN_LINK="$HOME/.local/bin/sunsetr-nightlight"
+DEFAULT_INDICATORS='["Dictation","ScreenRecording","Reminder","NightLight","Dnd","StayAwake"]'
+
+ASSUME_YES=0
+UNINSTALL=0
+for arg in "$@"; do
+  case "$arg" in
+    --yes) ASSUME_YES=1 ;;
+    --uninstall) UNINSTALL=1 ;;
+    *) echo "sunsetr setup: unknown argument: $arg" >&2; exit 1 ;;
+  esac
+done
+
+fail() { echo "sunsetr setup: $*" >&2; exit 1; }
+
+# Read from extensions/omarchy-menu.jsonc rather than keeping a second
+# hardcoded copy of the fragment here - a second copy is exactly how this
+# drifted out of sync with that file's icon glyph before. `jq -ce` doubles
+# as validation: it exits nonzero if the key is missing or its value is
+# null, so a malformed extensions file fails loudly instead of installing
+# a broken fragment.
+menu_fragment_from_extensions() {
+  local ext="$PLUGIN_DIR/extensions/omarchy-menu.jsonc" value
+  value=$(sed -e 's#^[[:space:]]*//.*$##' "$ext" | jq -ce '.["trigger.toggle.nightlight"]') || return 1
+  printf '  "trigger.toggle.nightlight": %s' "$value"
+}
+MENU_FRAGMENT=$(menu_fragment_from_extensions) || fail "could not read menu fragment from $PLUGIN_DIR/extensions/omarchy-menu.jsonc"
+
+interactive() { [[ -t 0 && -t 1 ]]; }
+confirm() {
+  local prompt="$1"
+  (( ASSUME_YES )) && return 0
+  if interactive; then gum confirm "$prompt"
+  else fail "refusing to continue without confirmation; pass --yes"
+  fi
+}
+backup() {
+  local f="$1"
+  [[ -f $f ]] || return 0
+  cp "$f" "$f.bak.sunsetr.$(date +%Y%m%d%H%M%S)"
+}
+
+manifest_default() {
+  jq -r --arg k "$1" '.barWidget.defaults[$k] // empty' "$PLUGIN_DIR/manifest.json"
+}
+
+create_presets() {
+  local day_preset night_preset duration
+  day_preset=$(manifest_default dayPreset); day_preset=${day_preset:-day}
+  night_preset=$(manifest_default nightPreset); night_preset=${night_preset:-night}
+  duration=$(manifest_default forceTransitionSeconds); duration=${duration:-2}
+  "$PLUGIN_DIR/bin/sunsetr-ensure-preset" "$day_preset" day "$duration" || fail "could not create '$day_preset' preset"
+  "$PLUGIN_DIR/bin/sunsetr-ensure-preset" "$night_preset" night "$duration" || fail "could not create '$night_preset' preset"
+}
+
+install_cli() {
+  mkdir -p "$HOME/.local/bin"
+  if [[ -L $BIN_LINK ]] && [[ "$(readlink -f "$BIN_LINK")" == "$PLUGIN_DIR/bin/sunsetr-nightlight" ]]; then
+    return 0
+  fi
+  if [[ -e $BIN_LINK || -L $BIN_LINK ]]; then
+    confirm "Replace existing $BIN_LINK ?" || return 0
+    backup "$BIN_LINK"
+    rm -f "$BIN_LINK"
+  fi
+  ln -s "$PLUGIN_DIR/bin/sunsetr-nightlight" "$BIN_LINK"
+}
+
+remove_nightlight_indicator() {
+  [[ -f $SHELL_JSON ]] || return 0
+  local already_excluded
+  already_excluded=$(jq --argjson defaults "$DEFAULT_INDICATORS" '
+    [.bar.layout // {} | to_entries[] | .value[]? | select(.id == "omarchy.indicators") | ((.items // $defaults) | index("NightLight"))] | any
+  ' "$SHELL_JSON")
+  [[ $already_excluded == "false" ]] && return 0
+
+  confirm "Remove the stock NightLight indicator from shell.json?" || return 0
+  backup "$SHELL_JSON"
+  jq --argjson defaults "$DEFAULT_INDICATORS" '
+    (.bar.layout // {}) |= with_entries(
+      .value |= map(
+        if .id == "omarchy.indicators" and ((.items // $defaults) | index("NightLight") != null)
+        then .items = ((.items // $defaults) - ["NightLight"])
+        else . end
+      )
+    )
+  ' "$SHELL_JSON" > "$SHELL_JSON.tmp"
+  mv "$SHELL_JSON.tmp" "$SHELL_JSON"
+}
+
+install_menu_override() {
+  mkdir -p "$(dirname "$MENU_JSONC")"
+  if [[ ! -f $MENU_JSONC ]]; then
+    printf '{\n%s\n}\n' "$MENU_FRAGMENT" > "$MENU_JSONC"
+    return
+  fi
+  grep -q '"trigger.toggle.nightlight"' "$MENU_JSONC" && return 0
+  confirm "Add the sunsetr nightlight menu override to $MENU_JSONC ?" || return 0
+  backup "$MENU_JSONC"
+  local tmp
+  tmp=$(mktemp)
+  # Insert frag as the new FIRST property, right after the opening brace,
+  # always followed by a comma. That's unconditionally valid JSON/JSONC no
+  # matter what follows it (an existing property, a comment, a blank line,
+  # or nothing) - no lookback needed. The previous approach inserted before
+  # the closing brace and needed to decide whether the line above it needed
+  # a trailing comma added; that lookback got it wrong when that line was a
+  # comment or blank (comma landed on the comment, not the real property),
+  # producing invalid JSONC that Omarchy's menu parser then discards the
+  # user's *entire* menu file for.
+  awk -v frag="$MENU_FRAGMENT" '
+    !done && /^[ \t]*\{[ \t]*$/ {
+      print
+      print frag ","
+      done = 1
+      next
+    }
+    { print }
+  ' "$MENU_JSONC" > "$tmp"
+  mv "$tmp" "$MENU_JSONC"
+}
+
+enable_plugin() {
+  # `omarchy plugin list`'s plain output lists every discovered plugin
+  # regardless of state, so a plain `grep -q mark.sunsetr` matches a
+  # disabled entry just as readily as an enabled one and short-circuits
+  # before `enable` ever runs. --json exposes the actual boolean.
+  local already_enabled
+  already_enabled=$(omarchy plugin list --json 2>/dev/null | jq -r '
+    [.[] | select(.id == "mark.sunsetr" and .enabled == true)] | any
+  ')
+  [[ $already_enabled == "true" ]] && return 0
+  omarchy plugin enable mark.sunsetr center || fail "could not enable mark.sunsetr - is it added via 'omarchy plugin add'?"
+}
+
+do_install() {
+  create_presets
+  install_cli
+  remove_nightlight_indicator
+  install_menu_override
+  enable_plugin
+  echo "sunsetr setup: install complete."
+}
+
+# --- Uninstall -------------------------------------------------------------
+# Restoring from the timestamped backups install already creates on every
+# edit is far more reliable than re-deriving the inverse of each jq/awk
+# transformation, and it's exactly what the backups exist for.
+
+restore_latest_backup() {
+  local f="$1" latest
+  latest=$(ls -t "$f".bak.sunsetr.* 2>/dev/null | head -n1) || true
+  [[ -n $latest ]] || return 1
+  mv "$latest" "$f"
+  # Remove any other backups from this install/uninstall cycle so they don't
+  # accumulate indefinitely.
+  rm -f "$f".bak.sunsetr.* 2>/dev/null || true
+  return 0
+}
+
+uninstall_cli() {
+  [[ -L $BIN_LINK ]] || return 0
+  [[ "$(readlink -f "$BIN_LINK")" == "$PLUGIN_DIR/bin/sunsetr-nightlight" ]] || return 0
+  rm -f "$BIN_LINK"
+}
+
+restore_shell_json() {
+  restore_latest_backup "$SHELL_JSON" || true
+}
+
+_trim() {
+  local s="$1"
+  s="${s#"${s%%[![:space:]]*}"}"
+  s="${s%"${s##*[![:space:]]}"}"
+  printf '%s' "$s"
+}
+
+restore_menu_jsonc() {
+  if restore_latest_backup "$MENU_JSONC"; then
+    return 0
+  fi
+  # No backup means bin/setup created the file from scratch (it didn't exist
+  # before install). Only remove it if it is *exactly* the untouched
+  # generated template (3 lines: "{", the fragment, "}") - if the user added
+  # anything to it after install, leave it in place rather than risk
+  # deleting their customizations.
+  if [[ -f $MENU_JSONC ]]; then
+    local lines
+    lines=$(wc -l < "$MENU_JSONC")
+    # Only attempt to read the 3 expected lines when there actually are 3 -
+    # under set -e, an unconditional read past EOF on a shorter file (e.g. a
+    # user-minified single-line version of the fragment) would abort the
+    # whole script here, killing do_uninstall before it could get to
+    # remove_generated_presets.
+    if [[ $lines -eq 3 ]]; then
+      local first second third
+      { IFS= read -r first; IFS= read -r second; IFS= read -r third; } < "$MENU_JSONC"
+      if [[ "$(_trim "$first")" == "{" && "$(_trim "$third")" == "}" \
+            && "$(_trim "$second")" == "$(_trim "$MENU_FRAGMENT")" ]]; then
+        rm -f "$MENU_JSONC"
+      fi
+    fi
+  fi
+}
+
+remove_generated_presets() {
+  local day_preset night_preset
+  day_preset=$(manifest_default dayPreset); day_preset=${day_preset:-day}
+  night_preset=$(manifest_default nightPreset); night_preset=${night_preset:-night}
+  for name in "$day_preset" "$night_preset"; do
+    local f="$HOME/.config/sunsetr/presets/$name/sunsetr.toml"
+    [[ -f $f ]] || continue
+    # Only remove presets this plugin generated and the user never touched -
+    # our generated files always start with this exact marker comment.
+    if head -n1 "$f" | grep -q "^# Generated by omarchy-sunsetr"; then
+      rm -f "$f"
+      rmdir "$HOME/.config/sunsetr/presets/$name" 2>/dev/null || true
+    fi
+  done
+}
+
+do_uninstall() {
+  confirm "Uninstall mark.sunsetr's Omarchy integration (CLI symlink, menu override, indicator restore, generated presets)?" || exit 0
+  sunsetr preset default >/dev/null 2>&1 || true
+  uninstall_cli
+  restore_shell_json
+  restore_menu_jsonc
+  remove_generated_presets
+  echo "sunsetr setup: uninstall complete. Run 'omarchy plugin remove mark.sunsetr' to remove the plugin itself."
+}
+
+if (( UNINSTALL )); then
+  do_uninstall
+else
+  do_install
+fi

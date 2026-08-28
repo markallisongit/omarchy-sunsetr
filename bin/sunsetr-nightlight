@@ -1,0 +1,119 @@
+#!/bin/bash
+
+# omarchy:summary=Control the sunsetr night light plugin (toggle/force/status)
+# omarchy:args=<toggle|on|off|auto|status|start|stop|refresh>
+# omarchy:examples=sunsetr-nightlight toggle
+
+set -euo pipefail
+
+PLUGIN_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)"
+SHELL_JSON="$HOME/.config/omarchy/shell.json"
+
+fail() {
+  echo "sunsetr-nightlight: $*" >&2
+  exit 1
+}
+
+have_shell() {
+  omarchy-shell mark.sunsetr status >/dev/null 2>&1
+}
+
+# Reads a barWidget setting for mark.sunsetr: shell.json's bar.layout entry
+# for this plugin id first, falling back to the manifest's own default. Only
+# used on the direct-to-sunsetr fallback path (the shell-connected path reads
+# the same settings live, in QML, via Service.qml's own setting()).
+resolved_setting() {
+  local key="$1" fallback="$2" val=""
+  if [[ -f $SHELL_JSON ]]; then
+    val=$(jq -r --arg id "mark.sunsetr" --arg k "$key" '
+      [.bar.layout // {} | to_entries[] | .value[]? | select(.id == $id) | .[$k]] | map(select(. != null)) | .[0] // empty
+    ' "$SHELL_JSON" 2>/dev/null || true)
+  fi
+  if [[ -z $val || $val == "null" ]]; then
+    val=$(jq -r --arg k "$key" '.barWidget.defaults[$k] // empty' "$PLUGIN_DIR/manifest.json" 2>/dev/null || true)
+  fi
+  [[ -n $val && $val != "null" ]] && echo "$val" || echo "$fallback"
+}
+
+direct_apply() {
+  local preset="$1" kind="$2" duration="$3"
+  pgrep -x sunsetr >/dev/null || { setsid uwsm-app -- sunsetr >/dev/null 2>&1 & sleep 1; }
+  if [[ $preset != "default" ]]; then
+    "$PLUGIN_DIR/bin/sunsetr-ensure-preset" "$preset" "$kind" "$duration" || fail "could not create preset '$preset'"
+  fi
+  sunsetr preset "$preset"
+}
+
+direct_toggle() {
+  local active day_temp night_temp day_preset night_preset duration current
+  active=$(sunsetr preset active 2>/dev/null || echo default)
+  if [[ $active != "default" ]]; then
+    sunsetr preset default
+    return
+  fi
+  day_temp=$(resolved_setting dayTemp 6500)
+  night_temp=$(resolved_setting nightTemp 3500)
+  day_preset=$(resolved_setting dayPreset day)
+  night_preset=$(resolved_setting nightPreset night)
+  duration=$(resolved_setting forceTransitionSeconds 2)
+  current=$(sunsetr status --json | jq -r '.current_temp // empty')
+  [[ -n $current ]] || current=$day_temp
+  # Assumes the conventional dayTemp > nightTemp (true for every real sunsetr
+  # config, by definition of what "day"/"night" temperature mean). The
+  # shell-connected path above instead calls Service.qml's toggle(), which
+  # uses SunsetrControl.toggleTarget + SunsetrColor.warmth and handles an
+  # inverted configuration correctly too - this fallback only runs when the
+  # shell isn't up, so the simplification is confined to a rarely-hit path.
+  if (( 2 * (day_temp - current) >= (day_temp - night_temp) )); then
+    direct_apply "$day_preset" "day" "$duration"
+  else
+    direct_apply "$night_preset" "night" "$duration"
+  fi
+}
+
+CMD="${1:-}"
+[[ -n $CMD ]] || fail "usage: sunsetr-nightlight <toggle|on|off|auto|status|start|stop|refresh>"
+
+case "$CMD" in
+  status)
+    if have_shell; then omarchy-shell mark.sunsetr status
+    else sunsetr status --json
+    fi
+    ;;
+  refresh)
+    have_shell && omarchy-shell -q mark.sunsetr refresh
+    ;;
+  toggle)
+    if have_shell; then omarchy-shell mark.sunsetr toggle
+    else direct_toggle
+    fi
+    ;;
+  on)
+    if have_shell; then omarchy-shell mark.sunsetr on
+    else direct_apply "$(resolved_setting nightPreset night)" "night" "$(resolved_setting forceTransitionSeconds 2)"
+    fi
+    ;;
+  off)
+    if have_shell; then omarchy-shell mark.sunsetr off
+    else direct_apply "$(resolved_setting dayPreset day)" "day" "$(resolved_setting forceTransitionSeconds 2)"
+    fi
+    ;;
+  auto)
+    if have_shell; then omarchy-shell mark.sunsetr auto
+    else sunsetr preset default
+    fi
+    ;;
+  start)
+    if have_shell; then omarchy-shell mark.sunsetr start
+    else pgrep -x sunsetr >/dev/null || setsid uwsm-app -- sunsetr >/dev/null 2>&1 &
+    fi
+    ;;
+  stop)
+    if have_shell; then omarchy-shell mark.sunsetr stop
+    else sunsetr stop
+    fi
+    ;;
+  *)
+    fail "unknown command '$CMD' (usage: toggle|on|off|auto|status|start|stop|refresh)"
+    ;;
+esac

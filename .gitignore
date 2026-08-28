@@ -1,0 +1,17 @@
+node_modules/
+*.bak.sunsetr.*
+
+# Claude Code / agent tooling runtime state (machine-local, not project artifacts)
+.claude/
+.superpowers/
+
+# Agent implementation plans are single-use build artifacts, not
+# contributor-facing documentation - keep them local. (Design specs under
+# docs/superpowers/specs/ are a separate, deliberately-tracked exception.)
+docs/superpowers/plans/
+
+# Editor/OS cruft
+.DS_Store
+*.swp
+.vscode/
+.idea/

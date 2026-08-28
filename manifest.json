@@ -1,0 +1,75 @@
+{
+  "schemaVersion": 1,
+  "id": "mark.sunsetr",
+  "name": "Night Light (sunsetr)",
+  "version": "0.2.0",
+  "author": "Mark",
+  "license": "MIT",
+  "description": "Night light indicator and control for sunsetr, driven by its event socket instead of hyprsunset. Left-click toggles forced day/night, right-click opens an info popup with an Auto/Day/Night switch, middle-click refreshes. Icon color runs cool-to-warm with the live color temperature; opacity tracks gamma.",
+  "kinds": [
+    "service",
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "service": "Service.qml",
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "Night Light (sunsetr)",
+    "description": "Live color/opacity readout of sunsetr's current temperature and gamma, with toggle and preset control.",
+    "category": "Status",
+    "allowMultiple": false,
+    "defaultSection": "center",
+    "defaults": {
+      "dayTemp": 6500,
+      "nightTemp": 3500,
+      "coolColor": "#9fb4c7",
+      "warmColor": "#ff9d54",
+      "dayPreset": "day",
+      "nightPreset": "night",
+      "forceTransitionSeconds": 2
+    },
+    "schema": [
+      {
+        "key": "dayTemp",
+        "type": "number",
+        "label": "Day temperature (K)",
+        "description": "Cool end of the color range. Match your sunsetr.toml day_temp."
+      },
+      {
+        "key": "nightTemp",
+        "type": "number",
+        "label": "Night temperature (K)",
+        "description": "Warm end of the color range. Match your sunsetr.toml night_temp."
+      },
+      {
+        "key": "coolColor",
+        "type": "string",
+        "label": "Color at day temperature"
+      },
+      {
+        "key": "warmColor",
+        "type": "string",
+        "label": "Color at night temperature"
+      },
+      {
+        "key": "dayPreset",
+        "type": "string",
+        "label": "Force-day preset name",
+        "description": "sunsetr preset applied when forcing day. Created automatically on first use if missing."
+      },
+      {
+        "key": "nightPreset",
+        "type": "string",
+        "label": "Force-night preset name",
+        "description": "sunsetr preset applied when forcing night. Created automatically on first use if missing."
+      },
+      {
+        "key": "forceTransitionSeconds",
+        "type": "number",
+        "label": "Force fade duration (s)",
+        "description": "How long forcing day/night fades in, via the preset's own startup_duration. Only applies the first time the preset is created; edit the generated .toml directly to change it afterward."
+      }
+    ]
+  }
+}
