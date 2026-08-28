@@ -1,6 +1,5 @@
 {
   "name": "omarchy-sunsetr",
-  "version": "0.1.0",
   "private": true,
   "description": "Omarchy bar plugin: sunsetr night-light indicator and control (mark.sunsetr)",
   "scripts": {

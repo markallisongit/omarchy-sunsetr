@@ -1,5 +1,9 @@
 # omarchy-sunsetr (mark.sunsetr)
 
+[![Test](https://github.com/markallisongit/omarchy-sunsetr/actions/workflows/test.yml/badge.svg)](https://github.com/markallisongit/omarchy-sunsetr/actions/workflows/test.yml)
+[![Release](https://img.shields.io/github/v/release/markallisongit/omarchy-sunsetr)](https://github.com/markallisongit/omarchy-sunsetr/releases)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 Omarchy bar plugin: a night-light indicator and control surface for
 [sunsetr](https://github.com/psi4j/sunsetr), driven by sunsetr's event
 socket instead of polling. Replaces Omarchy's stock NightLight indicator.
@@ -83,6 +87,18 @@ npm test          # runs tests/color.test.js and tests/control.test.js under pla
 `SunsetrColor.js` and `SunsetrControl.js` are pure JS with no Qt dependency,
 so they're fully unit-tested outside Quickshell. `Service.qml`/`BarWidget.qml`
 are verified manually against the running shell (no Qt test harness here).
+
+`main` is protected - all changes land via pull request, and tests run in CI
+on every push and pull request.
+
+### Releases
+
+Releases are fully automatic. `manifest.json`'s `version` is canonical (it's
+what Omarchy and the plugin marketplace read) - bump it and update
+`CHANGELOG.md` as part of a pull request. Once that PR merges into `main`,
+CI tags the new version (`vX.Y.Z`) and publishes a GitHub Release with
+auto-generated notes. Merges that don't change the version are left
+untagged.
 
 ## Architecture
 
