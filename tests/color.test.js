@@ -107,4 +107,58 @@ assert.equal(C.formatLocation(null, null), "", "no coordinates yet (sunsetr miss
 assert.equal(C.formatLocation(undefined, undefined), "")
 assert.equal(C.formatLocation("52.1", "-0.5"), "52.1°N, 0.5°W", "sunsetr get returns strings, not numbers")
 
+// formatPlaceName()
+// countryCode (2-letter, e.g. "GB") is preferred over countryName - the
+// popup is a narrow fixed-width card, and a full name like BigDataCloud's
+// "United Kingdom of Great Britain and Northern Ireland" blows straight
+// through it (see the 2026-08-31 screenshot: "Bedford, United Kingdom of...").
+assert.equal(C.formatPlaceName({ city: "Cambridge", countryCode: "GB", countryName: "United Kingdom of Great Britain and Northern Ireland" }),
+  "Cambridge, GB", "short code wins over a long country name")
+assert.equal(C.formatPlaceName({ locality: "Foo", countryCode: "us" }), "Foo, US",
+  "falls back to locality when city is absent; code is uppercased")
+assert.equal(C.formatPlaceName({ principalSubdivision: "Region", countryName: "Country" }),
+  "Region, Country", "no countryCode at all -> falls back to countryName, as before")
+assert.equal(C.formatPlaceName({ countryCode: "AQ" }), "AQ",
+  "country code alone is still a usable name")
+assert.equal(C.formatPlaceName({ city: "Solo" }), "Solo", "city alone, no country")
+assert.equal(C.formatPlaceName({}), "", "nothing usable -> empty, not 'undefined, undefined'")
+assert.equal(C.formatPlaceName(null), "")
+assert.equal(C.formatPlaceName(undefined), "")
+assert.equal(C.formatPlaceName("not an object"), "")
+assert.equal(C.formatPlaceName({ city: "", countryCode: "GB" }), "GB",
+  "empty-string city is treated as absent, not as a real (blank) name")
+assert.equal(C.formatPlaceName({ city: "   " }), "", "whitespace-only city is treated as absent")
+assert.equal(C.formatPlaceName({ city: "  Zurich  ", countryCode: " ch " }),
+  "Zurich, CH", "surrounding whitespace is trimmed before the 2-letter check")
+assert.equal(C.formatPlaceName({ city: 123, countryCode: "GB" }), "GB",
+  "non-string city is ignored rather than coerced into the name")
+assert.equal(C.formatPlaceName({ city: "X", countryCode: "USA", countryName: "United States" }),
+  "X, United States", "a code that isn't exactly 2 letters falls back to countryName")
+assert.equal(C.formatPlaceName({ city: "X", countryCode: 42 }), "X",
+  "non-string countryCode is ignored, not stringified into the name")
+
+// coordsMatch()
+assert.equal(C.coordsMatch(52.1, -0.5, 52.1, -0.5), true)
+assert.equal(C.coordsMatch(52.1, -0.5, 52.1 + 1e-9, -0.5), true, "sub-epsilon float noise still matches")
+assert.equal(C.coordsMatch(52.1, -0.5, 52.2, -0.5), false)
+assert.equal(C.coordsMatch(null, -0.5, 52.1, -0.5), false, "null on either side never matches")
+assert.equal(C.coordsMatch(52.1, -0.5, undefined, -0.5), false)
+assert.equal(C.coordsMatch(NaN, -0.5, 52.1, -0.5), false)
+assert.equal(C.coordsMatch("52.1", "-0.5", 52.1, -0.5), true, "numeric strings coerce like formatLocation")
+
+// parseGeocodeCache()
+const payload = JSON.stringify({ lat: 52.1, lon: -0.5, placeName: "Cambridge, United Kingdom" })
+assert.equal(C.parseGeocodeCache(payload, 52.1, -0.5), "Cambridge, United Kingdom",
+  "matching coordinates return the cached name")
+assert.equal(C.parseGeocodeCache(payload, 10, 10), null,
+  "a cache entry for a different location is a miss, not a wrong answer")
+assert.equal(C.parseGeocodeCache("", 52.1, -0.5), null, "no cache file yet -> miss")
+assert.equal(C.parseGeocodeCache("not json {{{", 52.1, -0.5), null,
+  "corrupt/truncated cache file -> miss, not a crash")
+assert.equal(C.parseGeocodeCache("42", 52.1, -0.5), null, "a JSON scalar isn't a cache entry")
+assert.equal(C.parseGeocodeCache(JSON.stringify({ lat: 52.1, lon: -0.5 }), 52.1, -0.5), null,
+  "missing placeName -> miss")
+assert.equal(C.parseGeocodeCache(JSON.stringify({ lat: 52.1, lon: -0.5, placeName: "" }), 52.1, -0.5), null,
+  "an empty cached name is treated as no cache, so it's retried rather than displayed")
+
 console.log("ok")

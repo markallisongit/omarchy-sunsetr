@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "mark.sunsetr",
   "name": "Night Light (sunsetr)",
-  "version": "0.3.2",
+  "version": "0.4.0",
   "author": "Mark",
   "license": "MIT",
   "description": "Night light indicator and control for sunsetr, driven by its event socket instead of hyprsunset. Left-click toggles forced day/night, right-click opens an info popup with an Auto/Day/Night switch, middle-click refreshes. Icon color runs cool-to-warm with the live color temperature; opacity tracks gamma.",
