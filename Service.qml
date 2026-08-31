@@ -62,6 +62,12 @@ Item {
   property string nextPeriod: ""
   property string stateName: "stable"
   property string lastError: ""
+  // Distinguishes "sunsetr isn't installed" from "sunsetr just hasn't
+  // started yet" - the socket-wait loop below can't tell those apart on its
+  // own, and a missing executable never fires Process.onExited at all
+  // (QProcess's FailedToStart isn't surfaced to QML here), so it's checked
+  // separately through a shell instead of relying on that.
+  property bool sunsetrMissing: false
 
   // Once a connection we had has dropped, the readings above are last-known
   // rather than live, and sunsetr may have moved the display since. Connection
@@ -187,6 +193,16 @@ Item {
     presetProcess.running = true
   }
 
+  // One-shot presence check, re-run every time awaitSocket times out (i.e.
+  // on the same ~30s cadence as the socket wait itself) so installing
+  // sunsetr while the shell is already running is picked up without a
+  // restart, same as a late-starting sunsetr already is below.
+  Process {
+    id: binaryCheck
+    command: ["bash", "-lc", "command -v sunsetr >/dev/null 2>&1"]
+    onExited: function(exitCode) { root.sunsetrMissing = exitCode !== 0 }
+  }
+
   readonly property string socketPath: Quickshell.env("XDG_RUNTIME_DIR") + "/sunsetr-events.sock"
   property var activeSocket: null
 
@@ -210,6 +226,7 @@ Item {
       } else if (exitCode === 124) {
         // `timeout` fired: sunsetr simply isn't up yet. The 30s wait is its
         // own throttle, so go straight back to waiting.
+        if (!binaryCheck.running) binaryCheck.running = true
         running = true
       } else {
         // The helper itself failed rather than timing out - no `timeout` on
@@ -277,6 +294,7 @@ Item {
         if (connected) {
           root.connected = true
           root.everConnected = true
+          root.sunsetrMissing = false
           root.retryDelay = root.retryDelayMin
           connectTimeout.stop()
         } else {
@@ -322,6 +340,7 @@ Item {
   Component.onCompleted: {
     seedProbe.running = true
     awaitSocket.running = true
+    binaryCheck.running = true
   }
 
   IpcHandler {
@@ -331,6 +350,7 @@ Item {
       return JSON.stringify({
         connected: root.connected,
         stale: root.stale,
+        sunsetrMissing: root.sunsetrMissing,
         retryDelay: root.retryDelay,
         stateLoaded: root.stateLoaded,
         currentTemp: root.currentTemp,

@@ -144,7 +144,13 @@ enable_plugin() {
   omarchy plugin enable mark.sunsetr center || fail "could not enable mark.sunsetr - is it added via 'omarchy plugin add'?"
 }
 
+require_sunsetr() {
+  command -v sunsetr >/dev/null 2>&1 && return 0
+  fail "sunsetr is not installed. Install it first, then re-run this setup: https://github.com/psi4j/sunsetr"
+}
+
 do_install() {
+  require_sunsetr
   create_presets
   install_cli
   remove_nightlight_indicator

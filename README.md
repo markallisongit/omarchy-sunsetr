@@ -22,6 +22,10 @@ socket instead of polling. Replaces Omarchy's stock NightLight indicator.
 
 ## Install
 
+Requires [sunsetr](https://github.com/psi4j/sunsetr) itself to already be
+installed - `bin/setup` checks for it and stops with an explanation if it
+isn't.
+
 ```
 omarchy plugin add https://github.com/markallisongit/omarchy-sunsetr.git
 cd ~/.config/omarchy/plugins/mark.sunsetr
