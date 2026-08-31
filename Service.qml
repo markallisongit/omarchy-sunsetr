@@ -141,7 +141,16 @@ Item {
     return stripped.trim()
   }
 
+  // Launching via uwsm-app when sunsetr isn't installed doesn't just fail
+  // quietly - uwsm wraps it in a systemd user scope, and that scope failing
+  // to start surfaces as an "App failure" desktop notification. Bailing out
+  // before ever calling uwsm-app is what avoids that, not anything under
+  // our own control once the launch attempt is made.
   function ensureRunningAndApply(name) {
+    if (root.sunsetrMissing) {
+      root.lastError = "sunsetr is not installed"
+      return
+    }
     var duration = Number(setting("forceTransitionSeconds", 2))
     // Prefer the absolute path to our bundled sunsetr-ensure-preset script:
     // the installer never puts it on PATH (only bin/sunsetr-nightlight gets
@@ -183,6 +192,10 @@ Item {
   }
 
   function start() {
+    if (root.sunsetrMissing) {
+      root.lastError = "sunsetr is not installed"
+      return
+    }
     presetProcess.command = ["bash", "-lc",
       "pgrep -x sunsetr >/dev/null || setsid uwsm-app -- sunsetr >/dev/null 2>&1 &"]
     presetProcess.running = true
