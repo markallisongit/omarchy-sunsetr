@@ -89,6 +89,7 @@ BarWidget {
   // the mark.sunsetr IPC status call for anyone who wants the fuller picture.)
   readonly property string tooltip: {
     if (!service) return "sunsetr service not loaded"
+    if (service.sunsetrMissing) return "sunsetr is not installed"
     if (!service.stateLoaded) return "loading…"
     var temp = service.currentTemp
     var gamma = service.currentGamma
@@ -142,6 +143,7 @@ BarWidget {
     : ""
 
   readonly property string statusLine: {
+    if (service && service.sunsetrMissing) return "not installed"
     if (!serviceReady) return ""
     var temp = service.currentTemp
     var gamma = service.currentGamma
@@ -150,6 +152,7 @@ BarWidget {
   }
 
   readonly property string connectionLine: {
+    if (service && service.sunsetrMissing) return "Install sunsetr, then run bin/setup again - see the plugin README"
     if (serviceReady && service.lastError) return service.lastError
     if (stale) return "Reconnected once sunsetr is back — showing last-known values"
     return ""
