@@ -74,6 +74,148 @@ Item {
   property var latitude: null
   property var longitude: null
 
+  // Human-readable "Cambridge, United Kingdom" for the popup, resolved from
+  // latitude/longitude via BigDataCloud's reverse-geocode-client endpoint (no
+  // API key). null until the first lookup lands - BarWidget falls back to
+  // formatLocation's raw coordinates until then, and forever if the lookup
+  // never succeeds (offline, service down, or a spot with no name at all).
+  // geocodedLat/geocodedLon record which coordinates placeName (or a
+  // deliberate "nothing usable there") is actually for, so maybeGeocode can
+  // tell "already resolved this exact location" apart from "location changed,
+  // go look it up again" without re-hitting the network on every refresh().
+  property var placeName: null
+  property var geocodedLat: null
+  property var geocodedLon: null
+
+  readonly property string geocodeCacheDir:
+    (Quickshell.env("XDG_CACHE_HOME") || (Quickshell.env("HOME") + "/.cache")) + "/mark.sunsetr"
+  readonly property string geocodeCacheFile: geocodeCacheDir + "/geocode.json"
+
+  // In-memory memo of every coordinate resolved so far this session (keyed
+  // by the same 6dp-rounded value used for the cache/query below), mapping
+  // to its place name ("" for a resolved-but-nameless spot). geocodedLat/
+  // geocodedLon alone only remembers the *most recent* lookup's target, so a
+  // location that flips away and back while a lookup for that intervening
+  // location is still in flight would otherwise find geocodedLat/geocodedLon
+  // pointing at itself (skip - already resolved) while placeName had already
+  // been cleared for the intervening lookup, stranding the popup on raw
+  // coordinates until that unrelated lookup finishes. The memo lets a return
+  // to an already-known location restore its name immediately instead.
+  property var geocodeMemo: ({})
+
+  // Kicks off the (cache-then-network) lookup for a newly-probed lat/lon, but
+  // only when it's actually a new location: coordsMatch against
+  // geocodedLat/geocodedLon is what stops a flapping sunsetr connection (each
+  // reconnect calls refresh() -> locationProbe) or a mashed manual-refresh
+  // click from re-querying the same spot over and over. The running-process
+  // guard is a second line of defense against overlapping lookups if two
+  // distinct locations arrive close together - the second is simply skipped
+  // and picked up by the next refresh() once the first finishes.
+  function maybeGeocode(lat, lon) {
+    if (lat === null || lat === undefined || lon === null || lon === undefined) return
+    var latNum = Number(lat), lonNum = Number(lon)
+    if (!isFinite(latNum) || !isFinite(lonNum)) return
+    // Rounded once, here, so the same value is used consistently for the
+    // memo/cache key, the coordsMatch dedupe, and the API query - 6dp is
+    // ~0.1m, far finer than a place name needs, chosen mainly to keep JS's
+    // number->string conversion (both in the URL and in the cache file) away
+    // from exponential notation, which the API can't parse as a coordinate.
+    var rLat = Number(latNum.toFixed(6)), rLon = Number(lonNum.toFixed(6))
+    var memoKey = rLat + "," + rLon
+    if (Object.prototype.hasOwnProperty.call(root.geocodeMemo, memoKey)) {
+      root.placeName = root.geocodeMemo[memoKey] || null
+      root.geocodedLat = rLat
+      root.geocodedLon = rLon
+      return
+    }
+    if (ColorModel.coordsMatch(rLat, rLon, root.geocodedLat, root.geocodedLon)) return
+    if (cacheReadProcess.running || geocodeProcess.running) return
+    // The old name belongs to the old coordinates - clear it now rather than
+    // leaving it displayed (wrongly) until this lookup resolves, which could
+    // be seconds away or, if it never succeeds, never.
+    root.placeName = null
+    root.pendingGeoLat = rLat
+    root.pendingGeoLon = rLon
+    cacheReadProcess.command = ["bash", "-lc", "cat " + shQuote(root.geocodeCacheFile) + " 2>/dev/null"]
+    cacheReadProcess.running = true
+  }
+
+  property var pendingGeoLat: null
+  property var pendingGeoLon: null
+
+  // Cache read is its own step (rather than folding into geocodeProcess)
+  // specifically so a warm cache never touches the network at all - it
+  // resolves the place name as fast as `cat` runs.
+  Process {
+    id: cacheReadProcess
+    stdout: StdioCollector { id: cacheReadOut; waitForEnd: true }
+    onExited: function(exitCode) {
+      var cached = ColorModel.parseGeocodeCache(String(cacheReadOut.text || ""), root.pendingGeoLat, root.pendingGeoLon)
+      if (cached) {
+        root.placeName = cached
+        root.geocodedLat = root.pendingGeoLat
+        root.geocodedLon = root.pendingGeoLon
+        root.geocodeMemo[root.pendingGeoLat + "," + root.pendingGeoLon] = cached
+        return
+      }
+      var url = "https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=" +
+        root.pendingGeoLat + "&longitude=" + root.pendingGeoLon + "&localityLanguage=en"
+      // -f: a non-2xx response (rate limited, service down) fails the curl
+      // call instead of handing an HTML error page to JSON.parse.
+      // -L: BigDataCloud 307-redirects api.bigdatacloud.net to api-bdc.io -
+      // without this the response is an empty, "successful" (exit 0) body.
+      // --connect-timeout/--max-time: never let a stalled connection leave
+      // this Process (and the running-guard above) stuck indefinitely.
+      geocodeProcess.command = ["bash", "-lc",
+        "curl -sfL -A 'omarchy-sunsetr-plugin' --connect-timeout 3 --max-time 5 " + shQuote(url)]
+      geocodeProcess.running = true
+    }
+  }
+
+  Process {
+    id: geocodeProcess
+    stdout: StdioCollector { id: geocodeOut; waitForEnd: true }
+    onExited: function(exitCode) {
+      // Offline, timed out, or the service refused/errored: leave
+      // geocodedLat/geocodedLon untouched so the *next* refresh() (the next
+      // reconnect, or a manual click) retries rather than giving up on this
+      // location for the rest of the session.
+      if (exitCode !== 0) return
+      var name = ""
+      try {
+        name = ColorModel.formatPlaceName(JSON.parse(String(geocodeOut.text || "")))
+      } catch (e) {
+        console.warn("mark.sunsetr: could not parse geocode response:", e)
+        return
+      }
+      // A location with no usable name (open ocean, Antarctica) is still a
+      // resolved answer - record it so this exact spot isn't re-queried every
+      // refresh, but there's nothing worth writing to the on-disk cache.
+      root.geocodedLat = root.pendingGeoLat
+      root.geocodedLon = root.pendingGeoLon
+      root.geocodeMemo[root.pendingGeoLat + "," + root.pendingGeoLon] = name
+      if (!name) return
+      root.placeName = name
+      var payload = JSON.stringify({ lat: root.pendingGeoLat, lon: root.pendingGeoLon, placeName: name })
+      // Written to a temp file and renamed into place so a shell restart (or
+      // a crash) mid-write can never leave a torn/partial cache file behind -
+      // the rename is atomic, so a reader always sees either the old
+      // complete file or the new one, never a half-written one.
+      geocodeCacheWriteProcess.command = ["bash", "-lc",
+        "mkdir -p " + shQuote(root.geocodeCacheDir) + " && printf '%s' " + shQuote(payload) +
+        " > " + shQuote(root.geocodeCacheFile + ".tmp") +
+        " && mv " + shQuote(root.geocodeCacheFile + ".tmp") + " " + shQuote(root.geocodeCacheFile)]
+      geocodeCacheWriteProcess.running = true
+    }
+  }
+
+  // Fire-and-forget: a failed write (read-only home, disk full) just means no
+  // persistent cache for next session, not a broken lookup this session -
+  // placeName above is already set from the live response either way.
+  Process {
+    id: geocodeCacheWriteProcess
+  }
+
   // Once a connection we had has dropped, the readings above are last-known
   // rather than live, and sunsetr may have moved the display since. Connection
   // health is this service's business even though only the widget renders it.
@@ -81,11 +223,52 @@ Item {
 
   function refresh() {
     if (!seedProbe.running) seedProbe.running = true
+    runLocationProbe()
+  }
+
+  // Throttled re-probe for applyEvent below: at most one `sunsetr get`
+  // subprocess per locationProbeThrottleMs, with a trailing call so a probe
+  // still lands shortly after a burst ends rather than being dropped
+  // entirely. Without this, the dozens of state_applied events a single
+  // ~70-minute sunset/sunrise transition emits as current_temp/current_gamma
+  // glide would each spawn their own subprocess back-to-back.
+  readonly property int locationProbeThrottleMs: 5000
+  property double lastLocationProbeMs: 0
+
+  function runLocationProbe() {
+    root.lastLocationProbeMs = Date.now()
     if (!locationProbe.running) locationProbe.running = true
+  }
+
+  Timer {
+    id: locationProbeTrailing
+    repeat: false
+    onTriggered: root.runLocationProbe()
+  }
+
+  function requestLocationProbe() {
+    var elapsed = Date.now() - root.lastLocationProbeMs
+    if (elapsed >= root.locationProbeThrottleMs) {
+      runLocationProbe()
+    } else if (!locationProbeTrailing.running) {
+      locationProbeTrailing.interval = root.locationProbeThrottleMs - elapsed
+      locationProbeTrailing.start()
+    }
   }
 
   function applyEvent(evt) {
     if (!evt || typeof evt !== "object") return
+    // Every socket message means sunsetr just reloaded and re-applied its
+    // config, so latitude/longitude on disk may have moved even when this
+    // particular event carries no coordinates and no visible temp/gamma
+    // change (e.g. a location edit that doesn't cross a day/night boundary
+    // fires state_applied only, no config_changed - `config_changed` turns
+    // out to mean "the smoothing target changed", not "the file changed").
+    // Re-running the same locationProbe refresh() uses at startup/reconnect
+    // is cheap and self-guarded, but a transition period fires this many
+    // times a second, so requestLocationProbe throttles rather than spawning
+    // a subprocess per event.
+    requestLocationProbe()
     if ("current_temp" in evt) currentTemp = evt.current_temp
     if ("current_gamma" in evt) currentGamma = evt.current_gamma
     if ("period" in evt) period = String(evt.period)
@@ -130,6 +313,7 @@ Item {
         var v = JSON.parse(String(locationOut.text || ""))
         root.latitude = "latitude" in v ? Number(v.latitude) : null
         root.longitude = "longitude" in v ? Number(v.longitude) : null
+        root.maybeGeocode(root.latitude, root.longitude)
       } catch (e) {
         console.warn("mark.sunsetr: could not parse location:", e)
       }
@@ -416,7 +600,8 @@ Item {
         nextPeriod: root.nextPeriod,
         lastError: root.lastError,
         latitude: root.latitude,
-        longitude: root.longitude
+        longitude: root.longitude,
+        placeName: root.placeName
       })
     }
 

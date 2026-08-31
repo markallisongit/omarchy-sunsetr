@@ -5,6 +5,24 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.4.0] - 2026-08-31
+
+- The popup's location line now shows a resolved place name (e.g.
+  "Cambridge, GB") instead of raw coordinates, via a reverse-geocode lookup
+  against BigDataCloud's free, keyless API. The result is cached at
+  `~/.cache/mark.sunsetr/geocode.json`, so the lookup only happens once per
+  actual location change. Falls back to raw coordinates if the lookup hasn't
+  resolved yet, is offline, or the location has no name to give.
+- `bin/setup` now also disables Omarchy's native `omarchy.nightlight`
+  service, not just its bar indicator - previously the native service stayed
+  switchable elsewhere and could fight sunsetr for control of the display.
+- The `mark.sunsetr` IPC `status` command now includes `placeName`.
+- Fixed: flipping between two locations in quick succession could leave the
+  popup stuck on raw coordinates for an already-resolved location until an
+  unrelated lookup finished.
+- Fixed: rapid `state_applied` events during a sunset/sunrise transition no
+  longer each spawn their own location-probe subprocess back-to-back.
+
 ## [0.3.2] - 2026-08-31
 
 - The popup's countdown line now reads "Day → Sunset begins in 11h" instead

@@ -150,8 +150,13 @@ BarWidget {
     ? (periodText + " → " + nextPeriodText + " begins in " + countdownText)
     : ""
 
+  // Prefers the resolved place name; while it's still pending (or the lookup
+  // never succeeds - offline, service down, an unnamed spot) falls back to
+  // raw coordinates rather than showing nothing.
   readonly property string locationLine: {
-    var loc = service ? ColorModel.formatLocation(service.latitude, service.longitude) : ""
+    if (!service) return ""
+    if (service.placeName) return "Location: " + service.placeName + " (change with sunsetr geo)"
+    var loc = ColorModel.formatLocation(service.latitude, service.longitude)
     return loc ? "Location: " + loc + " (change with sunsetr geo)" : ""
   }
 

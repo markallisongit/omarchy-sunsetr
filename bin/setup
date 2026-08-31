@@ -51,6 +51,20 @@ backup() {
   cp "$f" "$f.bak.sunsetr.$(date +%Y%m%d%H%M%S)"
 }
 
+# shell.json can get edited by more than one install step (indicator removal,
+# native-nightlight disable). restore_latest_backup only ever restores the
+# single most recent backup, so a second per-step backup would silently
+# orphan the first edit's true-original copy - uninstall would only undo the
+# last edit, not both. Backing it up once per run, on first touch, is what
+# keeps "restore the whole file" correct regardless of how many steps end up
+# editing it.
+SHELL_JSON_BACKED_UP=0
+backup_shell_json() {
+  (( SHELL_JSON_BACKED_UP )) && return 0
+  backup "$SHELL_JSON"
+  SHELL_JSON_BACKED_UP=1
+}
+
 manifest_default() {
   jq -r --arg k "$1" '.barWidget.defaults[$k] // empty' "$PLUGIN_DIR/manifest.json"
 }
@@ -86,7 +100,7 @@ remove_nightlight_indicator() {
   [[ $already_excluded == "false" ]] && return 0
 
   confirm "Remove the stock NightLight indicator from shell.json?" || return 0
-  backup "$SHELL_JSON"
+  backup_shell_json
   jq --argjson defaults "$DEFAULT_INDICATORS" '
     (.bar.layout // {}) |= with_entries(
       .value |= map(
@@ -97,6 +111,27 @@ remove_nightlight_indicator() {
     )
   ' "$SHELL_JSON" > "$SHELL_JSON.tmp"
   mv "$SHELL_JSON.tmp" "$SHELL_JSON"
+}
+
+# Distinct from remove_nightlight_indicator: that just hides the bar icon.
+# The icon and the omarchy.nightlight *service* plugin are independent -
+# Indicators.qml loads NightLight.qml purely from shell.json's items list,
+# never checking whether the service behind it is registry-enabled, and
+# NightLight.qml itself just falls back to "inactive" (not hidden) when the
+# service is gone. So skipping this step even after the icon is removed would
+# still leave the native service switchable elsewhere (Omarchy's settings UI,
+# its "nightlight" IPC target) and fighting sunsetr for control of the
+# display's gamma/temperature.
+disable_native_nightlight() {
+  local enabled
+  enabled=$(omarchy plugin list --json 2>/dev/null | jq -r '
+    [.[] | select(.id == "omarchy.nightlight" and .enabled == true)] | any
+  ')
+  [[ $enabled == "true" ]] || return 0
+
+  confirm "Disable Omarchy's built-in Night Light service (mark.sunsetr replaces it)?" || return 0
+  backup_shell_json
+  omarchy plugin disable omarchy.nightlight || fail "could not disable omarchy.nightlight"
 }
 
 install_menu_override() {
@@ -153,6 +188,13 @@ do_install() {
   require_sunsetr
   create_presets
   install_cli
+  # disable_native_nightlight persists shell.json from the live shell's
+  # in-memory config (via `omarchy plugin disable`'s IPC call), while
+  # remove_nightlight_indicator edits the file on disk directly with jq.
+  # Running the direct-disk edit last means it always starts from whatever
+  # disable_native_nightlight just wrote, rather than risking the in-memory
+  # write clobbering it before the shell has reloaded from disk.
+  disable_native_nightlight
   remove_nightlight_indicator
   install_menu_override
   enable_plugin
@@ -182,6 +224,9 @@ uninstall_cli() {
 }
 
 restore_shell_json() {
+  # One restore undoes both edits that can land in this file (indicator
+  # removal, native-nightlight disable) - see backup_shell_json's comment for
+  # why they share a single backup instead of each restoring independently.
   restore_latest_backup "$SHELL_JSON" || true
 }
 
@@ -237,7 +282,7 @@ remove_generated_presets() {
 }
 
 do_uninstall() {
-  confirm "Uninstall mark.sunsetr's Omarchy integration (CLI symlink, menu override, indicator restore, generated presets)?" || exit 0
+  confirm "Uninstall mark.sunsetr's Omarchy integration (CLI symlink, menu override, indicator + native nightlight restore, generated presets)?" || exit 0
   sunsetr preset default >/dev/null 2>&1 || true
   uninstall_cli
   restore_shell_json

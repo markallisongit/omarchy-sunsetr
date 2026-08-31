@@ -110,6 +110,73 @@ function formatLocation(lat, lon) {
     Math.abs(lonNum).toFixed(1) + "°" + lonDir
 }
 
+// First non-blank string among the arguments, trimmed; "" if none qualify.
+// Guards against a field that's present but the wrong type (a number, say) -
+// coercing that into text would produce a placename nobody asked for.
+function firstNonBlankString() {
+  for (var i = 0; i < arguments.length; i++) {
+    var s = arguments[i]
+    if (typeof s === "string" && s.trim() !== "") return s.trim()
+  }
+  return ""
+}
+
+// countryCode ("gb") -> "GB" if it's exactly 2 letters once trimmed, else ""
+// - anything else (a 3-letter code, a non-string) isn't a code this popup's
+// fixed width can trust, so the caller falls back to the full country name.
+function countryAbbrev(countryCode) {
+  if (typeof countryCode !== "string") return ""
+  var trimmed = countryCode.trim()
+  return /^[A-Za-z]{2}$/.test(trimmed) ? trimmed.toUpperCase() : ""
+}
+
+// BigDataCloud's reverse-geocode-client response -> "Cambridge, GB".
+// city/locality/principalSubdivision are tried in that order since rural or
+// remote coordinates often only populate the coarser fields; country alone
+// (open ocean, Antarctica) still beats showing nothing. The country half
+// prefers the 2-letter code over countryName - BigDataCloud's names run long
+// ("United Kingdom of Great Britain and Northern Ireland"), and this popup
+// is a narrow fixed-width card, not a report. "" only when the response has
+// no usable text at all, which tells the caller to fall back to raw
+// coordinates instead.
+function formatPlaceName(geo) {
+  if (!geo || typeof geo !== "object") return ""
+  var primary = firstNonBlankString(geo.city, geo.locality, geo.principalSubdivision)
+  var country = countryAbbrev(geo.countryCode) || firstNonBlankString(geo.countryName)
+  if (primary && country) return primary + ", " + country
+  return primary || country
+}
+
+// Same location, within float round-trip noise (JSON stringify/parse, string
+// coordinates from `sunsetr get`). null/undefined/non-finite on either side
+// never matches - that's "no reading yet", not "the same reading again".
+function coordsMatch(lat1, lon1, lat2, lon2) {
+  if (lat1 === null || lat1 === undefined || lon1 === null || lon1 === undefined) return false
+  if (lat2 === null || lat2 === undefined || lon2 === null || lon2 === undefined) return false
+  var a = Number(lat1), b = Number(lon1), c = Number(lat2), d = Number(lon2)
+  if (!isFinite(a) || !isFinite(b) || !isFinite(c) || !isFinite(d)) return false
+  return Math.abs(a - c) < 1e-6 && Math.abs(b - d) < 1e-6
+}
+
+// Raw text of the on-disk geocode cache -> the cached place name, or null if
+// it's missing, corrupt, for a different location, or was cached with no
+// usable name (an ocean/Antarctica-style "" is retried rather than "cached"
+// forever, since the API's answer for that spot could later improve). Never
+// throws: a torn or pre-feature-empty cache file is just a miss, not a crash.
+function parseGeocodeCache(text, lat, lon) {
+  if (!text) return null
+  var data
+  try {
+    data = JSON.parse(text)
+  } catch (e) {
+    return null
+  }
+  if (!data || typeof data !== "object") return null
+  if (!coordsMatch(data.lat, data.lon, lat, lon)) return null
+  var name = typeof data.placeName === "string" ? data.placeName.trim() : ""
+  return name ? name : null
+}
+
 if (typeof module !== "undefined") {
   module.exports = {
     clamp01: clamp01,
@@ -122,6 +189,9 @@ if (typeof module !== "undefined") {
     periodLabel: periodLabel,
     nextPeriodName: nextPeriodName,
     formatCountdown: formatCountdown,
-    formatLocation: formatLocation
+    formatLocation: formatLocation,
+    formatPlaceName: formatPlaceName,
+    coordsMatch: coordsMatch,
+    parseGeocodeCache: parseGeocodeCache
   }
 }

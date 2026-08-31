@@ -6,7 +6,8 @@
 
 Omarchy bar plugin: a night-light indicator and control surface for
 [sunsetr](https://github.com/psi4j/sunsetr), driven by sunsetr's event
-socket instead of polling. Replaces Omarchy's stock NightLight indicator.
+socket instead of polling. Replaces Omarchy's stock NightLight indicator and
+its native Night Light service.
 
 - Icon color runs cool -> warm with sunsetr's live color temperature;
   opacity tracks gamma. Collapses to zero width at true peak daytime;
@@ -18,6 +19,13 @@ socket instead of polling. Replaces Omarchy's stock NightLight indicator.
 - Forcing day/night fades in over `forceTransitionSeconds` (default 2s)
   instead of jumping instantly, using sunsetr's own per-preset `smoothing`/
   `startup_duration` fields.
+- The popup's location line shows a place name (e.g. "Cambridge, United
+  Kingdom") resolved from sunsetr's configured coordinates via a reverse
+  lookup against [BigDataCloud](https://www.bigdatacloud.com/)'s free,
+  keyless API - falls back to raw coordinates if that lookup hasn't resolved
+  yet, is offline, or the location has no name to give. The result is cached
+  at `~/.cache/mark.sunsetr/geocode.json`, so the lookup only ever happens
+  once per actual location change, not on every refresh or shell restart.
 - CLI (`sunsetr-nightlight`) for keybindings: `toggle|on|off|auto|status|start|stop|refresh`.
 
 ## Install
@@ -39,9 +47,14 @@ skip prompts):
    lazily on first toggle, so this step isn't required before first use).
 2. Symlinks `sunsetr-nightlight` into `~/.local/bin`.
 3. Removes the stock `NightLight` indicator from `~/.config/omarchy/shell.json`.
-4. Adds a `trigger.toggle.nightlight` menu override pointing at
+4. Disables Omarchy's native `omarchy.nightlight` service
+   (`omarchy plugin disable omarchy.nightlight`) - the indicator and the
+   service are independent, so removing the icon alone leaves the native
+   service still switchable elsewhere and fighting sunsetr for control of
+   the display.
+5. Adds a `trigger.toggle.nightlight` menu override pointing at
    `sunsetr-nightlight toggle`.
-5. Enables the plugin (`omarchy plugin enable mark.sunsetr`) if not already
+6. Enables the plugin (`omarchy plugin enable mark.sunsetr`) if not already
    enabled.
 
 Every file it edits gets a `.bak.sunsetr.<timestamp>` copy first.
