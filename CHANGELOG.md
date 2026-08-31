@@ -5,6 +5,15 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.3.0] - 2026-08-31
+
+- `bin/setup` now checks for the sunsetr binary up front and stops with a
+  clear message if it's missing, instead of failing later with a confusing
+  error.
+- The bar widget now distinguishes "sunsetr not installed" from the normal
+  boot/reconnect states in its tooltip and popup, rather than showing
+  "loading…" forever.
+
 ## [0.2.0] - 2026-08-28
 
 - Night-light indicator and control driven by sunsetr's event socket instead
