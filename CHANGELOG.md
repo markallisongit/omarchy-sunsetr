@@ -5,6 +5,16 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.3.2] - 2026-08-31
+
+- The popup's countdown line now reads "Day → Sunset begins in 11h" instead
+  of "Day → Sunset in 11h" - sunsetr's "Sunset"/"Sunrise" are named
+  ~70-minute transition periods, not the instant of the astronomical event,
+  and the old wording read as a countdown to sunset itself.
+- The popup now shows the coordinates sunsetr is using ("Location: 52.1°N,
+  0.5°W (change with sunsetr geo)"), so it's obvious where to fix it if
+  they're wrong.
+
 ## [0.3.1] - 2026-08-31
 
 - Fixed: left-clicking the widget before sunsetr is installed no longer
