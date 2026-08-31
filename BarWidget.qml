@@ -138,9 +138,22 @@ BarWidget {
   readonly property string periodText: serviceReady ? ColorModel.periodLabel(service.period) : ""
   readonly property string nextPeriodText: serviceReady ? ColorModel.periodLabel(ColorModel.nextPeriodName(service.period)) : ""
   readonly property string countdownText: isNaN(nextPeriodAtMs) ? "" : ColorModel.formatCountdown(nextPeriodAtMs - nowMs)
+  // "begins in" rather than the bare "in" this used to read as ("Day ->
+  // Sunset in 11h") - confirmed via `sunsetr --debug --simulate`: sunsetr's
+  // "Sunset"/"Sunrise" are named ~70-minute transition periods bounded by
+  // solar elevation thresholds (+10 deg to -2 deg for Sunset), not the
+  // instant of the astronomical event. The countdown here is to that period
+  // *starting*, which lands roughly an hour before the sun is actually at
+  // the horizon for a sunset (the gap is much smaller, only ~12 minutes,
+  // heading into a sunrise - the thresholds aren't symmetric around 0 deg).
   readonly property string periodLine: (periodText && nextPeriodText && countdownText)
-    ? (periodText + " → " + nextPeriodText + " in " + countdownText)
+    ? (periodText + " → " + nextPeriodText + " begins in " + countdownText)
     : ""
+
+  readonly property string locationLine: {
+    var loc = service ? ColorModel.formatLocation(service.latitude, service.longitude) : ""
+    return loc ? "Location: " + loc + " (change with sunsetr geo)" : ""
+  }
 
   readonly property string statusLine: {
     if (service && service.sunsetrMissing) return "not installed"
@@ -252,6 +265,16 @@ BarWidget {
         color: Qt.darker(root.bar.foreground, 1.3)
         font.family: root.bar.fontFamily
         font.pixelSize: Style.font.bodySmall
+        elide: Text.ElideRight
+      }
+
+      Text {
+        visible: root.locationLine !== ""
+        width: parent.width
+        text: root.locationLine
+        color: Qt.darker(root.bar.foreground, 1.3)
+        font.family: root.bar.fontFamily
+        font.pixelSize: Style.font.caption
         elide: Text.ElideRight
       }
 

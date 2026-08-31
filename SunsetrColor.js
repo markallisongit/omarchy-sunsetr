@@ -93,6 +93,23 @@ function formatCountdown(remainingMs) {
   return minutes > 0 ? hours + "h" + minutes + "m" : hours + "h"
 }
 
+// 52.1364 -> "52.1°N" (matches the 1-decimal precision `sunsetr get` itself
+// rounds coordinates to - this is a "does this look like the right place"
+// hint, not a value anything recomputes from). null/undefined/non-finite
+// input (sunsetr not installed yet, or the probe hasn't landed) -> "".
+function formatLocation(lat, lon) {
+  var latNum = Number(lat)
+  var lonNum = Number(lon)
+  if (lat === null || lat === undefined || lon === null || lon === undefined ||
+      !isFinite(latNum) || !isFinite(lonNum)) {
+    return ""
+  }
+  var latDir = latNum >= 0 ? "N" : "S"
+  var lonDir = lonNum >= 0 ? "E" : "W"
+  return Math.abs(latNum).toFixed(1) + "°" + latDir + ", " +
+    Math.abs(lonNum).toFixed(1) + "°" + lonDir
+}
+
 if (typeof module !== "undefined") {
   module.exports = {
     clamp01: clamp01,
@@ -104,6 +121,7 @@ if (typeof module !== "undefined") {
     opacityForState: opacityForState,
     periodLabel: periodLabel,
     nextPeriodName: nextPeriodName,
-    formatCountdown: formatCountdown
+    formatCountdown: formatCountdown,
+    formatLocation: formatLocation
   }
 }

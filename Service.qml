@@ -68,6 +68,11 @@ Item {
   // (QProcess's FailedToStart isn't surfaced to QML here), so it's checked
   // separately through a shell instead of relying on that.
   property bool sunsetrMissing: false
+  // Not part of the event socket's payload at all (sunsetr doesn't emit
+  // coordinates on state changes), so this only ever updates from
+  // locationProbe below - on startup and whenever refresh() runs.
+  property var latitude: null
+  property var longitude: null
 
   // Once a connection we had has dropped, the readings above are last-known
   // rather than live, and sunsetr may have moved the display since. Connection
@@ -76,6 +81,7 @@ Item {
 
   function refresh() {
     if (!seedProbe.running) seedProbe.running = true
+    if (!locationProbe.running) locationProbe.running = true
   }
 
   function applyEvent(evt) {
@@ -103,6 +109,29 @@ Item {
         root.applyEvent(JSON.parse(String(seedOut.text || "")))
       } catch (e) {
         console.warn("mark.sunsetr: could not parse seed status:", e)
+      }
+    }
+  }
+
+  // One-shot too, same reasoning as seedProbe: `sunsetr get` reads whatever
+  // is on disk right now, so this only reflects the coordinates at the
+  // moment it last ran (startup, or a manual refresh()) - not a live socket
+  // field, since sunsetr's events never carry coordinates.
+  Process {
+    id: locationProbe
+    command: ["sunsetr", "get", "--json", "latitude", "longitude"]
+    stdout: StdioCollector {
+      id: locationOut
+      waitForEnd: true
+    }
+    onExited: function(exitCode) {
+      if (exitCode !== 0) return
+      try {
+        var v = JSON.parse(String(locationOut.text || ""))
+        root.latitude = "latitude" in v ? Number(v.latitude) : null
+        root.longitude = "longitude" in v ? Number(v.longitude) : null
+      } catch (e) {
+        console.warn("mark.sunsetr: could not parse location:", e)
       }
     }
   }
@@ -365,6 +394,7 @@ Item {
 
   Component.onCompleted: {
     seedProbe.running = true
+    locationProbe.running = true
     awaitSocket.running = true
     binaryCheck.running = true
   }
@@ -384,7 +414,9 @@ Item {
         period: root.period,
         activePreset: root.activePreset,
         nextPeriod: root.nextPeriod,
-        lastError: root.lastError
+        lastError: root.lastError,
+        latitude: root.latitude,
+        longitude: root.longitude
       })
     }
 

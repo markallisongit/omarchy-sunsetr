@@ -99,4 +99,12 @@ assert.equal(C.formatCountdown(72 * 60 * 1000), "1h12m")
 assert.equal(C.formatCountdown(60 * 60 * 1000), "1h", "exact hour omits a redundant 0m")
 assert.equal(C.formatCountdown(125 * 60 * 1000), "2h5m")
 
+// formatLocation()
+assert.equal(C.formatLocation(52.1364, -0.4668), "52.1°N, 0.5°W")
+assert.equal(C.formatLocation(-33.8688, 151.2093), "33.9°S, 151.2°E", "negative lat/positive lon -> S/E")
+assert.equal(C.formatLocation(0, 0), "0.0°N, 0.0°E", "the equator/prime meridian aren't negative")
+assert.equal(C.formatLocation(null, null), "", "no coordinates yet (sunsetr missing or probe pending) -> empty, not '0.0°N, 0.0°E'")
+assert.equal(C.formatLocation(undefined, undefined), "")
+assert.equal(C.formatLocation("52.1", "-0.5"), "52.1°N, 0.5°W", "sunsetr get returns strings, not numbers")
+
 console.log("ok")
