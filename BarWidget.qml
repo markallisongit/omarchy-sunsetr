@@ -183,6 +183,10 @@ BarWidget {
 
     onPressed: function(buttonCode) {
       if (!root.service) return
+      // Any click just explains why, rather than left/middle-click each
+      // silently doing nothing (toggle()/refresh() are now no-ops here -
+      // see Service.qml) while only right-click's popup carried the reason.
+      if (root.service.sunsetrMissing) { root.popupOpen = true; return }
       if (buttonCode === Qt.RightButton) root.popupOpen = !root.popupOpen
       else if (buttonCode === Qt.MiddleButton) root.service.refresh()
       else root.service.toggle()
