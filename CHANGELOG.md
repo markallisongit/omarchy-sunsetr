@@ -5,6 +5,13 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.3.1] - 2026-08-31
+
+- Fixed: left-clicking the widget before sunsetr is installed no longer
+  triggers an OS-level "App failure" notification (it was still attempting
+  to launch sunsetr via `uwsm-app`). Any click now opens the popup's
+  existing "sunsetr is not installed" explanation instead.
+
 ## [0.3.0] - 2026-08-31
 
 - `bin/setup` now checks for the sunsetr binary up front and stops with a
