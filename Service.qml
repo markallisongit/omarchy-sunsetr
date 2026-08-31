@@ -203,6 +203,19 @@ Item {
     onExited: function(exitCode) { root.sunsetrMissing = exitCode !== 0 }
   }
 
+  // The awaitSocket-timeout cadence above only fires while never connected -
+  // once connected it stops running entirely, so a binary that disappears
+  // (or reappears) out from under an already-live connection would otherwise
+  // go undetected until the connection itself drops and retries. This runs
+  // independently of connection state so that case self-heals too, just on a
+  // slower cadence since it's the rarer one.
+  Timer {
+    interval: 60000
+    running: true
+    repeat: true
+    onTriggered: if (!binaryCheck.running) binaryCheck.running = true
+  }
+
   readonly property string socketPath: Quickshell.env("XDG_RUNTIME_DIR") + "/sunsetr-events.sock"
   property var activeSocket: null
 
