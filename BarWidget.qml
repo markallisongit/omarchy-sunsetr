@@ -391,7 +391,7 @@ BarWidget {
 
           Text {
             id: pinIcon
-            text: ""  // nf-fa-map_marker, matching omarchy.weather
+            text: ""  // nf-fa-map_marker, matching omarchy.weather
             color: Qt.darker(root.bar.foreground, 1.4)
             font.family: root.bar.fontFamily
             font.pixelSize: Style.font.caption
