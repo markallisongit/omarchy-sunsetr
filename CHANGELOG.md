@@ -57,6 +57,17 @@ asking, because showing it sends nothing.
 
 ### Fixed
 
+- **`bin/setup` could abort with exit 1 and no output at all.** Three checks
+  captured a command's output into a variable with stderr discarded; under
+  `set -euo pipefail` a failure there aborts the script, and with stderr gone
+  it aborted in total silence. All three now let the underlying error through
+  and add their own line saying which step gave up. Hit for real when running
+  setup over SSH, where bash skips `~/.bashrc`, leaving `OMARCHY_PATH` unset
+  so every `omarchy` subcommand exits nonzero. They fail rather than skip
+  deliberately: if the plugin list can't be read, the `omarchy plugin
+  disable`/`enable` calls that follow can't work either, and a skip would
+  half-apply the install without saying so.
+
 - `sunsetr get --json latitude longitude` reports coordinates rounded to one
   decimal place (`"51.9"` for a stored `51.879670`), so a picked name filed
   under the coordinates it was picked at was filed where nothing would ever
