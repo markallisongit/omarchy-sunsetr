@@ -3,6 +3,7 @@ import Quickshell
 import Quickshell.Io
 import "SunsetrColor.js" as ColorModel
 import "SunsetrControl.js" as Control
+import "SunsetrGeocode.js" as Geocode
 
 // Owns the live sunsetr state for the bar widget: a persistent connection to
 // sunsetr's event socket (sunsetr-events.sock), which streams one JSON line
@@ -87,6 +88,97 @@ Item {
   property var geocodedLat: null
   property var geocodedLon: null
 
+  // Whether the user has agreed to coordinates being sent to BigDataCloud.
+  // A binding on `settings`, so flipping it from the popup (or via
+  // `omarchy bar set`) re-evaluates here and fires the handler below. This is
+  // the only thing standing between the current location and the network:
+  // see Geocode.nextGeocodeStep, where "fetch" is unreachable without it.
+  readonly property bool placeNamesOptedIn: !!setting("resolvePlaceNames", false)
+
+  // True when the *only* remaining way to name the current location is to ask
+  // a third party, and the user hasn't agreed to that. The popup turns this
+  // into the "Show place name" affordance and its consent prompt. False
+  // whenever a name is already known locally - there is nothing to consent to
+  // if nothing would be sent.
+  property bool needsGeocodeConsent: false
+
+  // The exact coordinates the consent prompt offers to send, so the popup can
+  // show the user the real payload rather than the 1dp display form. Set at
+  // the moment consent becomes relevant, and read only while it is.
+  property var consentLat: null
+  property var consentLon: null
+
+  // Withdrawing consent has to forget what the lookup produced, or "stop
+  // looking up place names" would leave the looked-up name on screen. It must
+  // not forget a name that never required a lookup, though - one taken from a
+  // suggestion the user picked never left the machine - so cache entries
+  // record which of the two they came from.
+  readonly property string geocodeSourcePicker: "picker"
+  readonly property string geocodeSourceLookup: "lookup"
+  property string placeNameSource: ""
+
+  // Flipping the opt-in has to reconsider the current location: the
+  // coordsMatch dedupe in maybeGeocode would otherwise treat this spot as
+  // settled and never look at it again under the new answer. Driven off the
+  // binding rather than off the grant/revoke functions below so it behaves
+  // the same when the setting is changed from outside - `omarchy bar set`,
+  // or an edit to shell.json.
+  onPlaceNamesOptedInChanged: {
+    if (!root.placeNamesOptedIn && root.placeNameSource === root.geocodeSourceLookup) {
+      root.forgetLookedUpPlaceName()
+    }
+    root.geocodedLat = null
+    root.geocodedLon = null
+    root.needsGeocodeConsent = false
+    root.maybeGeocode(root.latitude, root.longitude)
+  }
+
+  // Records the user's answer to the popup's consent prompt. Persisted
+  // through Omarchy's own `omarchy bar set`, which goes back through the
+  // shell's IPC: the running shell picks the change up immediately (the
+  // binding above fires, and the lookup proceeds), and this plugin never
+  // writes to the user's shell.json itself. Asked once rather than on every
+  // popup, and withdrawable from the same line that offered it.
+  function setPlaceNameLookups(enabled) {
+    placeNameSettingProcess.command = ["omarchy", "bar", "set", "mark.sunsetr",
+      "resolvePlaceNames", enabled ? "true" : "false", "--json"]
+    placeNameSettingProcess.running = true
+  }
+
+  Process {
+    id: placeNameSettingProcess
+    stdout: StdioCollector { id: placeNameSettingOut; waitForEnd: true }
+    stderr: StdioCollector { id: placeNameSettingErr; waitForEnd: true }
+    onExited: function(exitCode) {
+      if (exitCode === 0) return
+      // Nothing was sent and nothing was saved - say so rather than leaving
+      // the popup looking as though the choice took effect.
+      root.lastError = root.extractError(
+        String(placeNameSettingOut.text || "") + String(placeNameSettingErr.text || "")) ||
+        "could not save the place-name setting"
+    }
+  }
+
+  // Withdrawing consent forgets what was obtained under it: the displayed
+  // name, this session's memo entry for it, and the on-disk cache. A name
+  // that came from a suggestion the user picked is left alone - it never left
+  // this machine, so there is nothing about it to withdraw.
+  function forgetLookedUpPlaceName() {
+    root.placeName = null
+    root.placeNameSource = ""
+    if (root.geocodedLat !== null && root.geocodedLon !== null) {
+      delete root.geocodeMemo[root.geocodedLat + "," + root.geocodedLon]
+    }
+    // rm removes the link itself rather than following it, so a symlink
+    // planted at this path can't redirect the delete elsewhere.
+    geocodeCacheClearProcess.command = ["bash", "-lc", "rm -f -- " + shQuote(root.geocodeCacheFile)]
+    geocodeCacheClearProcess.running = true
+  }
+
+  Process {
+    id: geocodeCacheClearProcess
+  }
+
   readonly property string geocodeCacheDir:
     (Quickshell.env("XDG_CACHE_HOME") || (Quickshell.env("HOME") + "/.cache")) + "/mark.sunsetr"
   readonly property string geocodeCacheFile: geocodeCacheDir + "/geocode.json"
@@ -111,19 +203,22 @@ Item {
   // guard is a second line of defense against overlapping lookups if two
   // distinct locations arrive close together - the second is simply skipped
   // and picked up by the next refresh() once the first finishes.
+  // Note what this deliberately does *not* gate: the consent check lives in
+  // cacheReadProcess below, after the local sources have been consulted, not
+  // here at the top. Consent governs whether coordinates are transmitted, not
+  // whether a name already sitting on this machine may be displayed - so a
+  // location the user picked from the search dropdown, or one resolved by an
+  // earlier opted-in lookup, still shows its name with nothing sent anywhere.
   function maybeGeocode(lat, lon) {
-    // Off by default: resolving a place name means sending your exact
-    // configured coordinates to BigDataCloud, a third party. Only do that
-    // once the user has explicitly opted in via the widget's settings -
-    // otherwise the popup just shows raw coordinates (see BarWidget.qml's
-    // locationLine), and nothing about location ever leaves this machine.
-    if (!root.setting("resolvePlaceNames", false)) {
-      root.placeName = null
+    if (lat === null || lat === undefined || lon === null || lon === undefined) {
+      root.needsGeocodeConsent = false
       return
     }
-    if (lat === null || lat === undefined || lon === null || lon === undefined) return
     var latNum = Number(lat), lonNum = Number(lon)
-    if (!isFinite(latNum) || !isFinite(lonNum)) return
+    if (!isFinite(latNum) || !isFinite(lonNum)) {
+      root.needsGeocodeConsent = false
+      return
+    }
     // Rounded once, here, so the same value is used consistently for the
     // memo/cache key, the coordsMatch dedupe, and the API query - 6dp is
     // ~0.1m, far finer than a place name needs, chosen mainly to keep JS's
@@ -131,10 +226,28 @@ Item {
     // from exponential notation, which the API can't parse as a coordinate.
     var rLat = Number(latNum.toFixed(6)), rLon = Number(lonNum.toFixed(6))
     var memoKey = rLat + "," + rLon
+    // Checked before the memo: when the user has just picked a new place that
+    // happens to round to coordinates already in the memo, the name they
+    // picked is the right answer, not the one filed earlier.
+    var picked = root.claimPickedPlaceName(rLat, rLon)
+    if (picked) {
+      root.placeName = picked
+      root.placeNameSource = root.geocodeSourcePicker
+      root.geocodedLat = rLat
+      root.geocodedLon = rLon
+      root.geocodeMemo[memoKey] = picked
+      root.needsGeocodeConsent = false
+      root.writeGeocodeCache(rLat, rLon, picked, root.geocodeSourcePicker)
+      return
+    }
     if (Object.prototype.hasOwnProperty.call(root.geocodeMemo, memoKey)) {
       root.placeName = root.geocodeMemo[memoKey] || null
       root.geocodedLat = rLat
       root.geocodedLon = rLon
+      // An empty memo entry is a spot the lookup answered with no usable name
+      // (open ocean, Antarctica), not an unanswered one - re-offering consent
+      // for a question already asked and answered would be a loop.
+      root.needsGeocodeConsent = false
       return
     }
     if (ColorModel.coordsMatch(rLat, rLon, root.geocodedLat, root.geocodedLon)) return
@@ -159,12 +272,33 @@ Item {
     id: cacheReadProcess
     stdout: StdioCollector { id: cacheReadOut; waitForEnd: true }
     onExited: function(exitCode) {
-      var cached = ColorModel.parseGeocodeCache(String(cacheReadOut.text || ""), root.pendingGeoLat, root.pendingGeoLon)
-      if (cached) {
+      var raw = String(cacheReadOut.text || "")
+      var cachedSource = ColorModel.parseGeocodeCacheSource(raw)
+      var cached = Geocode.usableCachedName(
+        ColorModel.parseGeocodeCache(raw, root.pendingGeoLat, root.pendingGeoLon),
+        cachedSource, root.placeNamesOptedIn)
+      // The local sources are exhausted at exactly this point, so this is
+      // where the transmit-or-ask decision belongs. Everything above ran
+      // regardless of consent because none of it leaves the machine.
+      var step = Geocode.nextGeocodeStep(true, cached, root.placeNamesOptedIn)
+      if (step === "resolved") {
         root.placeName = cached
+        root.placeNameSource = cachedSource
         root.geocodedLat = root.pendingGeoLat
         root.geocodedLon = root.pendingGeoLon
         root.geocodeMemo[root.pendingGeoLat + "," + root.pendingGeoLon] = cached
+        root.needsGeocodeConsent = false
+        return
+      }
+      if (step !== "fetch") {
+        // "ask": a name for this location exists only at a third party, and
+        // the user has not agreed to it being asked. Stop here - short of the
+        // network - and let the popup offer the choice, showing these exact
+        // coordinates as the payload. geocodedLat/geocodedLon stay untouched
+        // so consenting later re-runs this for the same spot.
+        root.consentLat = root.pendingGeoLat
+        root.consentLon = root.pendingGeoLon
+        root.needsGeocodeConsent = true
         return
       }
       var url = "https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=" +
@@ -205,25 +339,36 @@ Item {
       root.geocodeMemo[root.pendingGeoLat + "," + root.pendingGeoLon] = name
       if (!name) return
       root.placeName = name
-      var payload = JSON.stringify({ lat: root.pendingGeoLat, lon: root.pendingGeoLon, placeName: name })
-      // Written to a temp file and renamed into place so a shell restart (or
-      // a crash) mid-write can never leave a torn/partial cache file behind -
-      // the rename is atomic, so a reader always sees either the old
-      // complete file or the new one, never a half-written one.
-      //
-      // mktemp rather than a fixed "geocode.json.tmp": that path was
-      // predictable and sat in a user-writable directory, so a symlink
-      // planted there ahead of time would have been followed and the redirect
-      // would have written through it. Same fix, and the same reasoning, as
-      // bin/setup's config writes. Created in geocodeCacheDir so the mv stays
-      // a same-filesystem atomic rename.
-      geocodeCacheWriteProcess.command = ["bash", "-lc",
-        "mkdir -p " + shQuote(root.geocodeCacheDir) +
-        " && tmp=$(mktemp " + shQuote(root.geocodeCacheFile + ".XXXXXX") + ")" +
-        " && printf '%s' " + shQuote(payload) + ' > "$tmp"' +
-        " && mv \"$tmp\" " + shQuote(root.geocodeCacheFile)]
-      geocodeCacheWriteProcess.running = true
+      root.placeNameSource = root.geocodeSourceLookup
+      root.needsGeocodeConsent = false
+      root.writeGeocodeCache(root.pendingGeoLat, root.pendingGeoLon, name, root.geocodeSourceLookup)
     }
+  }
+
+  // Persists one coordinate->name pair for the next session. Shared by the
+  // reverse-geocode response above and by setLocation below, which knows the
+  // name without asking anyone - the cache doesn't care which produced it,
+  // beyond the `source` tag that forgetLookedUpPlaceName needs to tell a
+  // transmitted answer from one that never left this machine.
+  function writeGeocodeCache(lat, lon, name, source) {
+    var payload = JSON.stringify({ lat: lat, lon: lon, placeName: name, source: source })
+    // Written to a temp file and renamed into place so a shell restart (or
+    // a crash) mid-write can never leave a torn/partial cache file behind -
+    // the rename is atomic, so a reader always sees either the old
+    // complete file or the new one, never a half-written one.
+    //
+    // mktemp rather than a fixed "geocode.json.tmp": that path was
+    // predictable and sat in a user-writable directory, so a symlink
+    // planted there ahead of time would have been followed and the redirect
+    // would have written through it. Same fix, and the same reasoning, as
+    // bin/setup's config writes. Created in geocodeCacheDir so the mv stays
+    // a same-filesystem atomic rename.
+    geocodeCacheWriteProcess.command = ["bash", "-lc",
+      "mkdir -p " + shQuote(root.geocodeCacheDir) +
+      " && tmp=$(mktemp " + shQuote(root.geocodeCacheFile + ".XXXXXX") + ")" +
+      " && printf '%s' " + shQuote(payload) + ' > "$tmp"' +
+      " && mv \"$tmp\" " + shQuote(root.geocodeCacheFile)]
+    geocodeCacheWriteProcess.running = true
   }
 
   // Fire-and-forget: a failed write (read-only home, disk full) just means no
@@ -423,12 +568,46 @@ Item {
   // successful write also kicks an immediate, unthrottled location probe
   // rather than waiting on the throttled one requestLocationProbe schedules
   // off the state_applied event this triggers when sunsetr is running.
-  function setLocation(lat, lon) {
+  // `name` is the place name of the suggestion the user picked, which the
+  // search already returned alongside its coordinates. Carrying it through to
+  // here is what keeps the ordinary path off the network entirely: the popup
+  // can show "Cambridge, United Kingdom" without ever asking a third party to
+  // turn those coordinates back into the name they came from.
+  function setLocation(lat, lon, name) {
     var latNum = Number(lat), lonNum = Number(lon)
     if (!isFinite(latNum) || !isFinite(lonNum)) return
+    // Rounded the same way maybeGeocode rounds, so the memo/cache entry
+    // seeded below is found by the key the next probe will look it up under.
+    root.pendingPickedLat = Number(latNum.toFixed(6))
+    root.pendingPickedLon = Number(lonNum.toFixed(6))
+    root.pendingPickedName = String(name || "")
     setLocationProcess.command = ["sunsetr", "set", "--target", "default",
       "transition_mode=geo", "latitude=" + latNum, "longitude=" + lonNum]
     setLocationProcess.running = true
+  }
+
+  property var pendingPickedLat: null
+  property var pendingPickedLon: null
+  property string pendingPickedName: ""
+
+  // See Geocode.isPickedLocation: sunsetr reports coordinates rounded to 1dp,
+  // so the probe that follows a location change hands back numbers that are
+  // near - not equal to - the ones the picker sent. This is the margin that
+  // absorbs that, comfortably below the distance between two places anyone
+  // would be choosing between.
+  readonly property real pickedCoordTolerance: 0.06
+
+  // Hands the pending picked name to the probe that just reported this
+  // location, and forgets it so it can never be claimed twice. Returns "" if
+  // there is nothing pending or these are different coordinates - in which
+  // case the name stays pending for the probe it really belongs to.
+  function claimPickedPlaceName(rLat, rLon) {
+    if (!root.pendingPickedName) return ""
+    if (!Geocode.isPickedLocation(rLat, rLon, root.pendingPickedLat,
+        root.pendingPickedLon, root.pickedCoordTolerance)) return ""
+    var name = root.pendingPickedName
+    root.pendingPickedName = ""
+    return name
   }
 
   Process {
@@ -438,9 +617,14 @@ Item {
     onExited: function(exitCode) {
       if (exitCode === 0) {
         root.lastError = ""
+        // The name is attached by the probe this kicks off, once sunsetr has
+        // said what the new location reads back as.
         root.runLocationProbe()
         return
       }
+      // The move didn't happen, so the name must not outlive it - left
+      // pending, it would attach itself to whatever location is probed next.
+      root.pendingPickedName = ""
       root.lastError = root.extractError(String(setLocationOut.text || "") + String(setLocationErr.text || ""))
     }
   }
@@ -655,7 +839,13 @@ Item {
         lastError: root.lastError,
         latitude: root.latitude,
         longitude: root.longitude,
-        placeName: root.placeName
+        placeName: root.placeName,
+        // The consent state, reported so it can be checked without opening
+        // the popup - the QML side of this isn't reachable from the test
+        // suite, so this is how it gets exercised.
+        placeNamesOptedIn: root.placeNamesOptedIn,
+        needsGeocodeConsent: root.needsGeocodeConsent,
+        placeNameSource: root.placeNameSource
       })
     }
 

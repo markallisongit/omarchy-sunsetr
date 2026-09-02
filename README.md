@@ -19,22 +19,26 @@ its native Night Light service.
 - Forcing day/night fades in over `forceTransitionSeconds` (default 2s)
   instead of jumping instantly, using sunsetr's own per-preset `smoothing`/
   `startup_duration` fields.
-- The popup's location line can show a place name (e.g. "Cambridge, United
-  Kingdom") resolved from sunsetr's configured coordinates via a reverse
-  lookup against [BigDataCloud](https://www.bigdatacloud.com/)'s free,
-  keyless API. **Off by default** - resolving a name means sending your
-  exact configured latitude/longitude to that third party, so it only
-  happens once you turn on the `resolvePlaceNames` setting below. With it
-  off (or before the lookup resolves, or while offline, or if the location
-  has no name to give), the line falls back to raw coordinates. Once
-  enabled, a resolved result is cached at `~/.cache/mark.sunsetr/geocode.json`,
-  so the lookup only ever happens once per actual location change, not on
-  every refresh or shell restart.
 - Click the location line to search for a new one: type a city name, pick a
   match from the dropdown (or just press Enter for the top match), and
   sunsetr switches to geo mode at that location immediately. Search is
   powered by [Open-Meteo](https://open-meteo.com/)'s free, keyless
-  geocoding API.
+  geocoding API. **The place name comes with it** - a location set this way
+  shows as "Cambridge, United Kingdom" straight away, with no lookup and
+  nothing sent anywhere, because the search already returned the name.
+- For a location that came from `sunsetr.toml` rather than the search box,
+  the popup shows raw coordinates and offers a **"show place name"** link
+  beside them. That opens a prompt naming
+  [BigDataCloud](https://www.bigdatacloud.com/) and showing the exact
+  coordinates that would be sent to it, with **Look up** and **Not now**.
+  Nothing leaves your machine until you choose Look up. That choice is
+  remembered (it sets `resolvePlaceNames` below, via `omarchy bar set`), so
+  you're asked once rather than every time - and the same line then offers
+  **"stop lookups"** to withdraw it, which also forgets the name that was
+  looked up and deletes it from the cache.
+- Resolved names are cached at `~/.cache/mark.sunsetr/geocode.json`, so a
+  lookup happens at most once per actual location change, not on every
+  refresh or shell restart.
 - CLI (`sunsetr-nightlight`) for keybindings: `toggle|on|off|auto|status|start|stop|refresh`.
 
 ## Install
@@ -103,7 +107,7 @@ Configured per the bar widget's entry in `~/.config/omarchy/shell.json`
 | `dayPreset` | `"day"` | sunsetr preset name applied when forcing day. |
 | `nightPreset` | `"night"` | sunsetr preset name applied when forcing night. |
 | `forceTransitionSeconds` | `2` | Fade duration when forcing day/night. **Only takes effect the first time the preset is created** - to change it later, edit `~/.config/sunsetr/presets/<name>/sunsetr.toml`'s `startup_duration` directly. |
-| `resolvePlaceNames` | `false` | Show a resolved place name for your location instead of raw coordinates. Sends your exact coordinates to BigDataCloud - see above. |
+| `resolvePlaceNames` | `false` | Whether coordinates may be sent to BigDataCloud to resolve a place name. You normally set this from the popup's consent prompt rather than by hand; editing it here is equivalent. Does not affect names that came from the search box - those need no lookup. |
 
 ## Keybindings
 
