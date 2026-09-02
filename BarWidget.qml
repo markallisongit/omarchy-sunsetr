@@ -341,6 +341,7 @@ BarWidget {
         }
         Text {
           text: root.statusLine
+          textFormat: Text.PlainText
           color: root.bar.foreground
           font.family: root.bar.fontFamily
           font.pixelSize: Style.font.bodySmall
@@ -351,6 +352,7 @@ BarWidget {
         visible: root.periodLine !== ""
         width: parent.width
         text: root.periodLine
+        textFormat: Text.PlainText
         color: Qt.darker(root.bar.foreground, 1.3)
         font.family: root.bar.fontFamily
         font.pixelSize: Style.font.bodySmall
@@ -372,6 +374,7 @@ BarWidget {
         Text {
           width: parent.width
           text: root.locationLine
+          textFormat: Text.PlainText
           color: Qt.darker(root.bar.foreground, 1.3)
           font.family: root.bar.fontFamily
           font.pixelSize: Style.font.caption
@@ -432,6 +435,7 @@ BarWidget {
 
               Text {
                 text: modelData.name
+                textFormat: Text.PlainText
                 color: index === root.suggestionIndex ? Style.hoverStateColor(root.bar.foreground, Color.accent) : root.bar.foreground
                 font.family: root.bar.fontFamily
                 font.pixelSize: Style.font.caption
@@ -439,6 +443,7 @@ BarWidget {
               Text {
                 visible: text !== ""
                 text: modelData.description
+                textFormat: Text.PlainText
                 color: Qt.darker(root.bar.foreground, 1.5)
                 font.family: root.bar.fontFamily
                 font.pixelSize: Style.font.caption
@@ -460,6 +465,7 @@ BarWidget {
         visible: root.connectionLine !== ""
         width: parent.width
         text: root.connectionLine
+        textFormat: Text.PlainText
         color: root.bar.urgent
         font.family: root.bar.fontFamily
         font.pixelSize: Style.font.caption

@@ -48,16 +48,24 @@ confirm() {
 backup() {
   local f="$1"
   [[ -f $f ]] || return 0
-  cp "$f" "$f.bak.sunsetr.$(date +%Y%m%d%H%M%S)"
+  # A fixed name (not a timestamp) rather than glob-discovered later: every
+  # call site below only ever backs up a given file once per install (each
+  # is guarded by an already-applied check, or SHELL_JSON_BACKED_UP), so
+  # there's never more than one legitimate backup to find. Picking "whichever
+  # matching file has the newest mtime" at restore time would instead trust
+  # any file another local process happened to drop in this same
+  # user-writable directory. -n leaves an existing backup alone rather than
+  # clobbering it, in case backup() is ever called twice for the same file
+  # across separate runs without an uninstall in between.
+  cp -n "$f" "$f.bak.sunsetr"
 }
 
 # shell.json can get edited by more than one install step (indicator removal,
-# native-nightlight disable). restore_latest_backup only ever restores the
-# single most recent backup, so a second per-step backup would silently
-# orphan the first edit's true-original copy - uninstall would only undo the
-# last edit, not both. Backing it up once per run, on first touch, is what
-# keeps "restore the whole file" correct regardless of how many steps end up
-# editing it.
+# native-nightlight disable). backup() only ever keeps a single backup per
+# file, so a second per-step backup would silently orphan the first edit's
+# true-original copy - uninstall would only undo the last edit, not both.
+# Backing it up once per run, on first touch, is what keeps "restore the
+# whole file" correct regardless of how many steps end up editing it.
 SHELL_JSON_BACKED_UP=0
 backup_shell_json() {
   (( SHELL_JSON_BACKED_UP )) && return 0
@@ -101,6 +109,13 @@ remove_nightlight_indicator() {
 
   confirm "Remove the stock NightLight indicator from shell.json?" || return 0
   backup_shell_json
+  local tmp
+  # mktemp rather than a fixed "$SHELL_JSON.tmp": a predictable path in a
+  # user-writable directory is a symlink target waiting to happen - plant a
+  # symlink there ahead of time and this redirect would follow it and
+  # overwrite whatever it points at instead. Same directory as SHELL_JSON so
+  # the final mv is an atomic rename, not a cross-filesystem copy.
+  tmp=$(mktemp "$SHELL_JSON.XXXXXX")
   jq --argjson defaults "$DEFAULT_INDICATORS" '
     (.bar.layout // {}) |= with_entries(
       .value |= map(
@@ -109,8 +124,8 @@ remove_nightlight_indicator() {
         else . end
       )
     )
-  ' "$SHELL_JSON" > "$SHELL_JSON.tmp"
-  mv "$SHELL_JSON.tmp" "$SHELL_JSON"
+  ' "$SHELL_JSON" > "$tmp"
+  mv "$tmp" "$SHELL_JSON"
 }
 
 # Distinct from remove_nightlight_indicator: that just hides the bar icon.
@@ -144,7 +159,9 @@ install_menu_override() {
   confirm "Add the sunsetr nightlight menu override to $MENU_JSONC ?" || return 0
   backup "$MENU_JSONC"
   local tmp
-  tmp=$(mktemp)
+  # Same directory as MENU_JSONC (not the default TMPDIR) so the final mv is
+  # an atomic same-filesystem rename.
+  tmp=$(mktemp "$MENU_JSONC.XXXXXX")
   # Insert frag as the new FIRST property, right after the opening brace,
   # always followed by a comma. That's unconditionally valid JSON/JSONC no
   # matter what follows it (an existing property, a comment, a blank line,
@@ -264,18 +281,33 @@ do_install() {
 }
 
 # --- Uninstall -------------------------------------------------------------
-# Restoring from the timestamped backups install already creates on every
+# Restoring from the backups install already creates on every
 # edit is far more reliable than re-deriving the inverse of each jq/awk
 # transformation, and it's exactly what the backups exist for.
 
-restore_latest_backup() {
-  local f="$1" latest
-  latest=$(ls -t "$f".bak.sunsetr.* 2>/dev/null | head -n1) || true
-  [[ -n $latest ]] || return 1
-  mv "$latest" "$f"
-  # Remove any other backups from this install/uninstall cycle so they don't
-  # accumulate indefinitely.
-  rm -f "$f".bak.sunsetr.* 2>/dev/null || true
+restore_backup() {
+  local f="$1"
+  local backup="$f.bak.sunsetr"
+  [[ -e $backup ]] || return 1
+  # backup() only ever creates a plain file at this exact path - refuse to
+  # act on anything else found there instead of trusting it by name/mtime
+  # alone. A symlink or a file this user doesn't own could only get to this
+  # path via something other than backup() itself (another local process
+  # sharing this user-writable directory, or a crash leaving something
+  # unexpected behind).
+  if [[ -L $backup ]]; then
+    echo "sunsetr setup: refusing to restore $backup: it is a symlink" >&2
+    return 1
+  fi
+  if [[ ! -f $backup ]]; then
+    echo "sunsetr setup: refusing to restore $backup: not a regular file" >&2
+    return 1
+  fi
+  if [[ ! -O $backup ]]; then
+    echo "sunsetr setup: refusing to restore $backup: not owned by the current user" >&2
+    return 1
+  fi
+  mv "$backup" "$f"
   return 0
 }
 
@@ -289,7 +321,7 @@ restore_shell_json() {
   # One restore undoes both edits that can land in this file (indicator
   # removal, native-nightlight disable) - see backup_shell_json's comment for
   # why they share a single backup instead of each restoring independently.
-  restore_latest_backup "$SHELL_JSON" || true
+  restore_backup "$SHELL_JSON" || true
 }
 
 _trim() {
@@ -300,7 +332,7 @@ _trim() {
 }
 
 restore_menu_jsonc() {
-  if restore_latest_backup "$MENU_JSONC"; then
+  if restore_backup "$MENU_JSONC"; then
     return 0
   fi
   # No backup means bin/setup created the file from scratch (it didn't exist

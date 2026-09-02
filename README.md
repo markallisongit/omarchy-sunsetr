@@ -19,13 +19,17 @@ its native Night Light service.
 - Forcing day/night fades in over `forceTransitionSeconds` (default 2s)
   instead of jumping instantly, using sunsetr's own per-preset `smoothing`/
   `startup_duration` fields.
-- The popup's location line shows a place name (e.g. "Cambridge, United
+- The popup's location line can show a place name (e.g. "Cambridge, United
   Kingdom") resolved from sunsetr's configured coordinates via a reverse
   lookup against [BigDataCloud](https://www.bigdatacloud.com/)'s free,
-  keyless API - falls back to raw coordinates if that lookup hasn't resolved
-  yet, is offline, or the location has no name to give. The result is cached
-  at `~/.cache/mark.sunsetr/geocode.json`, so the lookup only ever happens
-  once per actual location change, not on every refresh or shell restart.
+  keyless API. **Off by default** - resolving a name means sending your
+  exact configured latitude/longitude to that third party, so it only
+  happens once you turn on the `resolvePlaceNames` setting below. With it
+  off (or before the lookup resolves, or while offline, or if the location
+  has no name to give), the line falls back to raw coordinates. Once
+  enabled, a resolved result is cached at `~/.cache/mark.sunsetr/geocode.json`,
+  so the lookup only ever happens once per actual location change, not on
+  every refresh or shell restart.
 - Click the location line to search for a new one: type a city name, pick a
   match from the dropdown (or just press Enter for the top match), and
   sunsetr switches to geo mode at that location immediately. Search is
@@ -72,7 +76,7 @@ skip prompts):
 7. Enables the plugin (`omarchy plugin enable mark.sunsetr`) if not already
    enabled.
 
-Every file it edits gets a `.bak.sunsetr.<timestamp>` copy first.
+Every file it edits gets a `.bak.sunsetr` copy first.
 
 ## Uninstall
 
@@ -99,6 +103,7 @@ Configured per the bar widget's entry in `~/.config/omarchy/shell.json`
 | `dayPreset` | `"day"` | sunsetr preset name applied when forcing day. |
 | `nightPreset` | `"night"` | sunsetr preset name applied when forcing night. |
 | `forceTransitionSeconds` | `2` | Fade duration when forcing day/night. **Only takes effect the first time the preset is created** - to change it later, edit `~/.config/sunsetr/presets/<name>/sunsetr.toml`'s `startup_duration` directly. |
+| `resolvePlaceNames` | `false` | Show a resolved place name for your location instead of raw coordinates. Sends your exact coordinates to BigDataCloud - see above. |
 
 ## Keybindings
 

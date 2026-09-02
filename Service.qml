@@ -112,6 +112,15 @@ Item {
   // distinct locations arrive close together - the second is simply skipped
   // and picked up by the next refresh() once the first finishes.
   function maybeGeocode(lat, lon) {
+    // Off by default: resolving a place name means sending your exact
+    // configured coordinates to BigDataCloud, a third party. Only do that
+    // once the user has explicitly opted in via the widget's settings -
+    // otherwise the popup just shows raw coordinates (see BarWidget.qml's
+    // locationLine), and nothing about location ever leaves this machine.
+    if (!root.setting("resolvePlaceNames", false)) {
+      root.placeName = null
+      return
+    }
     if (lat === null || lat === undefined || lon === null || lon === undefined) return
     var latNum = Number(lat), lonNum = Number(lon)
     if (!isFinite(latNum) || !isFinite(lonNum)) return
