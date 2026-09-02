@@ -5,6 +5,35 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.6.0] - 2026-09-02
+
+Addresses the marketplace security review of 0.5.0:
+
+- **Breaking (behavior):** the BigDataCloud reverse-geocode lookup that
+  resolves a place name for the popup's location line is now off by
+  default, behind a new `resolvePlaceNames` setting - resolving a name
+  means sending your exact configured coordinates to that third party, so
+  it now requires explicit opt-in. With it off, the popup shows raw
+  coordinates.
+- Hardened `bin/sunsetr-ensure-preset`: preset names are now restricted to
+  a safe charset (blocks path traversal), sunsetr's reported
+  temperature/gamma values are validated as numeric before being written
+  into the generated TOML (blocks config injection), a symlink planted at
+  the preset path is refused rather than followed, and the file is written
+  via a private temp file + atomic rename instead of a direct redirect.
+- Hardened `bin/setup`'s config-file edits: writes to `shell.json` and the
+  menu override now go through an unpredictable `mktemp`-generated temp
+  file in the same directory (was a fixed `.tmp` suffix, susceptible to a
+  pre-planted symlink) before an atomic rename. Backups now use a single
+  fixed filename per file (was glob/mtime-discovered at restore time,
+  which could be tricked into "restoring" an attacker-planted file) and
+  restore now refuses anything at that path that isn't a regular file
+  owned by the current user.
+- `BarWidget.qml`'s popup now renders all dynamic/external text (geocoder
+  suggestions, resolved place name, status and error lines) with
+  `textFormat: Text.PlainText`, so content from an external API can no
+  longer be auto-detected and rendered as rich text.
+
 ## [0.5.0] - 2026-09-02
 
 - The popup's location line is now clickable: type a city name, pick a match

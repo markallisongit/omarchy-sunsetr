@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "mark.sunsetr",
   "name": "Night Light (sunsetr)",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "author": "Mark",
   "license": "MIT",
   "description": "Night light indicator and control for sunsetr, driven by its event socket instead of hyprsunset. Left-click toggles forced day/night, right-click opens an info popup with an Auto/Day/Night switch, middle-click refreshes. Icon color runs cool-to-warm with the live color temperature; opacity tracks gamma.",
@@ -27,7 +27,8 @@
       "warmColor": "#ff9d54",
       "dayPreset": "day",
       "nightPreset": "night",
-      "forceTransitionSeconds": 2
+      "forceTransitionSeconds": 2,
+      "resolvePlaceNames": false
     },
     "schema": [
       {
@@ -69,6 +70,13 @@
         "type": "number",
         "label": "Force fade duration (s)",
         "description": "How long forcing day/night fades in, via the preset's own startup_duration. Only applies the first time the preset is created; edit the generated .toml directly to change it afterward."
+      },
+      {
+        "key": "resolvePlaceNames",
+        "type": "boolean",
+        "label": "Look up place names online",
+        "description": "Show a place name (e.g. \"Cambridge, United Kingdom\") for your configured location in the popup. Sends your exact configured latitude/longitude to BigDataCloud's free reverse-geocoding API to resolve it. Off by default; the popup shows raw coordinates instead.",
+        "defaultValue": false
       }
     ]
   }
