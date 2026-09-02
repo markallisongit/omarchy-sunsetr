@@ -3,7 +3,7 @@
   "private": true,
   "description": "Omarchy bar plugin: sunsetr night-light indicator and control (mark.sunsetr)",
   "scripts": {
-    "test": "node tests/color.test.js && node tests/control.test.js"
+    "test": "node tests/color.test.js && node tests/control.test.js && node tests/geocode.test.js"
   },
   "license": "MIT"
 }

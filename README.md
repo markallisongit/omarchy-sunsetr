@@ -26,6 +26,11 @@ its native Night Light service.
   yet, is offline, or the location has no name to give. The result is cached
   at `~/.cache/mark.sunsetr/geocode.json`, so the lookup only ever happens
   once per actual location change, not on every refresh or shell restart.
+- Click the location line to search for a new one: type a city name, pick a
+  match from the dropdown (or just press Enter for the top match), and
+  sunsetr switches to geo mode at that location immediately. Search is
+  powered by [Open-Meteo](https://open-meteo.com/)'s free, keyless
+  geocoding API.
 - CLI (`sunsetr-nightlight`) for keybindings: `toggle|on|off|auto|status|start|stop|refresh`.
 
 ## Install

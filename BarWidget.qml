@@ -1,8 +1,10 @@
 import QtQuick
 import Quickshell
+import Quickshell.Io
 import qs.Commons
 import qs.Ui
 import "SunsetrColor.js" as ColorModel
+import "SunsetrGeocode.js" as Geocode
 
 // Live sunsetr readout and control surface: left-click toggles day/night,
 // middle-click refreshes, right-click opens a popup with Auto/Day/Night
@@ -58,7 +60,10 @@ BarWidget {
   readonly property bool peeked: collapsed && revealed
 
   property bool popupOpen: false
-  function close() { popupOpen = false }
+  function close() {
+    if (root.editingLocation) root.cancelEditingLocation()
+    popupOpen = false
+  }
 
   // The service reports what sunsetr said; turning that into a color, an
   // opacity and a line of text is this widget's job, since it's the half that
@@ -152,12 +157,83 @@ BarWidget {
 
   // Prefers the resolved place name; while it's still pending (or the lookup
   // never succeeds - offline, service down, an unnamed spot) falls back to
-  // raw coordinates rather than showing nothing.
+  // raw coordinates. "not set" (rather than hiding the line) keeps the
+  // click-to-edit affordance reachable even before any location has ever
+  // been configured - e.g. a fresh static-mode setup, where sunsetr has no
+  // latitude/longitude fields to read at all.
   readonly property string locationLine: {
     if (!service) return ""
-    if (service.placeName) return "Location: " + service.placeName + " (change with sunsetr geo)"
+    if (service.placeName) return "Location: " + service.placeName
     var loc = ColorModel.formatLocation(service.latitude, service.longitude)
-    return loc ? "Location: " + loc + " (change with sunsetr geo)" : ""
+    return "Location: " + (loc || "not set")
+  }
+
+  // ---- Location editing. Clicking the popup's location line swaps it for a
+  //      search field; picking a geocoded suggestion writes lat/lon straight
+  //      into sunsetr's base config (see Service.qml's setLocation()).
+  property bool editingLocation: false
+  property var locationSuggestions: []
+  property int suggestionIndex: 0
+  property string geocodePendingQuery: ""
+  property string geocodeActiveQuery: ""
+
+  function startEditingLocation() {
+    root.editingLocation = true
+    root.locationSuggestions = []
+    root.suggestionIndex = 0
+    Qt.callLater(function() {
+      locationField.text = ""
+      locationField.forceActiveFocus()
+    })
+  }
+
+  function cancelEditingLocation() {
+    root.editingLocation = false
+    root.locationSuggestions = []
+    geocodeDebounce.stop()
+  }
+
+  function commitLocation() {
+    var choice = Geocode.resolveLocationCommit(root.locationSuggestions, root.suggestionIndex)
+    if (!choice) return
+    if (root.service) root.service.setLocation(choice.latitude, choice.longitude)
+    root.cancelEditingLocation()
+  }
+
+  // Debounced geocoding. Only one curl runs at a time; if the query moved on
+  // while a fetch was in flight, the latest query is fetched right after.
+  function requestGeocode() {
+    var query = locationField.text.trim()
+    if (query.length < 2) {
+      root.locationSuggestions = []
+      return
+    }
+    root.geocodePendingQuery = query
+    if (!geocodeProc.running) root.startGeocode()
+  }
+
+  function startGeocode() {
+    root.geocodeActiveQuery = root.geocodePendingQuery
+    geocodeProc.command = ["curl", "-fsS", "--max-time", "5",
+      "https://geocoding-api.open-meteo.com/v1/search?name=" + encodeURIComponent(root.geocodeActiveQuery) + "&count=5&language=en&format=json"]
+    geocodeProc.running = true
+  }
+
+  Process {
+    id: geocodeProc
+    stdout: StdioCollector { id: geocodeSearchOut; waitForEnd: true }
+    onExited: function(exitCode) {
+      root.locationSuggestions = (exitCode === 0 && root.editingLocation)
+        ? Geocode.parseForwardGeocodingResults(String(geocodeSearchOut.text || "")) : []
+      root.suggestionIndex = 0
+      if (root.geocodePendingQuery !== root.geocodeActiveQuery) Qt.callLater(root.startGeocode)
+    }
+  }
+
+  Timer {
+    id: geocodeDebounce
+    interval: 300
+    onTriggered: root.requestGeocode()
   }
 
   readonly property string statusLine: {
@@ -205,7 +281,7 @@ BarWidget {
       // silently doing nothing (toggle()/refresh() are now no-ops here -
       // see Service.qml) while only right-click's popup carried the reason.
       if (root.service.sunsetrMissing) { root.popupOpen = true; return }
-      if (buttonCode === Qt.RightButton) root.popupOpen = !root.popupOpen
+      if (buttonCode === Qt.RightButton) { if (root.popupOpen) root.close(); else root.popupOpen = true }
       else if (buttonCode === Qt.MiddleButton) root.service.refresh()
       else root.service.toggle()
     }
@@ -215,12 +291,20 @@ BarWidget {
     }
   }
 
-  PopupCard {
+  // KeyboardPanel rather than PopupCard: PopupCard wraps an xdg-popup, which
+  // never receives real keyboard input (Wayland routes typed keys to it only
+  // via its parent surface, not directly) - fine for the Auto/Day/Night
+  // buttons below, but the location search field needs actual text input.
+  // KeyboardPanel is a wlr-layer-shell surface with real keyboard focus
+  // management, built for exactly this; its content API is otherwise a
+  // compatible superset of PopupCard's.
+  KeyboardPanel {
     id: popup
     anchorItem: root
     bar: root.bar
     owner: root
     open: root.popupOpen
+    focusTarget: column
     contentWidth: popup.fittedContentWidth(Style.space(260))
     contentHeight: popup.fittedContentHeight(column.implicitHeight)
 
@@ -273,14 +357,103 @@ BarWidget {
         elide: Text.ElideRight
       }
 
-      Text {
-        visible: root.locationLine !== ""
+      Row {
+        visible: !root.editingLocation && root.locationLine !== ""
         width: parent.width
-        text: root.locationLine
-        color: Qt.darker(root.bar.foreground, 1.3)
-        font.family: root.bar.fontFamily
-        font.pixelSize: Style.font.caption
-        elide: Text.ElideRight
+        spacing: Style.space(4)
+
+        TapHandler {
+          onTapped: root.startEditingLocation()
+        }
+        HoverHandler {
+          cursorShape: Qt.PointingHandCursor
+        }
+
+        Text {
+          width: parent.width
+          text: root.locationLine
+          color: Qt.darker(root.bar.foreground, 1.3)
+          font.family: root.bar.fontFamily
+          font.pixelSize: Style.font.caption
+          elide: Text.ElideRight
+        }
+      }
+
+      Column {
+        visible: root.editingLocation
+        width: parent.width
+        spacing: Style.space(4)
+
+        TextField {
+          id: locationField
+          width: parent.width
+          placeholderText: "Search city"
+          foreground: root.bar.foreground
+          font.family: root.bar.fontFamily
+          font.pixelSize: Style.font.caption
+          verticalPadding: Style.space(4)
+
+          onTextChanged: if (root.editingLocation) geocodeDebounce.restart()
+
+          Keys.onPressed: function(event) {
+            if (event.key === Qt.Key_Escape) {
+              root.cancelEditingLocation()
+              event.accepted = true
+            } else if (event.key === Qt.Key_Down) {
+              if (root.suggestionIndex < root.locationSuggestions.length - 1) root.suggestionIndex++
+              event.accepted = true
+            } else if (event.key === Qt.Key_Up) {
+              if (root.suggestionIndex > 0) root.suggestionIndex--
+              event.accepted = true
+            } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+              root.commitLocation()
+              event.accepted = true
+            }
+          }
+        }
+
+        Repeater {
+          model: root.locationSuggestions
+
+          Rectangle {
+            required property var modelData
+            required property int index
+            width: parent.width
+            height: suggestionRow.implicitHeight + Style.space(6)
+            radius: Style.cornerRadius
+            color: index === root.suggestionIndex ? Style.hoverFillFor(root.bar.foreground, Color.accent) : "transparent"
+
+            Row {
+              id: suggestionRow
+              anchors.left: parent.left
+              anchors.leftMargin: Style.space(6)
+              anchors.verticalCenter: parent.verticalCenter
+              spacing: Style.space(6)
+
+              Text {
+                text: modelData.name
+                color: index === root.suggestionIndex ? Style.hoverStateColor(root.bar.foreground, Color.accent) : root.bar.foreground
+                font.family: root.bar.fontFamily
+                font.pixelSize: Style.font.caption
+              }
+              Text {
+                visible: text !== ""
+                text: modelData.description
+                color: Qt.darker(root.bar.foreground, 1.5)
+                font.family: root.bar.fontFamily
+                font.pixelSize: Style.font.caption
+              }
+            }
+
+            MouseArea {
+              anchors.fill: parent
+              hoverEnabled: true
+              cursorShape: Qt.PointingHandCursor
+              onPositionChanged: root.suggestionIndex = index
+              onClicked: { root.suggestionIndex = index; root.commitLocation() }
+            }
+          }
+        }
       }
 
       Text {

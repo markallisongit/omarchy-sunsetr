@@ -5,6 +5,14 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.5.0] - 2026-09-02
+
+- The popup's location line is now clickable: type a city name, pick a match
+  from the dropdown (or press Enter for the top match), and sunsetr switches
+  to geo mode at that location immediately - no more dropping to a terminal
+  for `sunsetr geo`. Search uses Open-Meteo's free, keyless geocoding API.
+  Always writes to the base config, not whatever preset is currently active.
+
 ## [0.4.1] - 2026-09-02
 
 - Fixed: on a fresh install, the bar icon could get stuck reading
