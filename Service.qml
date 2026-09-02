@@ -300,9 +300,17 @@ Item {
   // is on disk right now, so this only reflects the coordinates at the
   // moment it last ran (startup, or a manual refresh()) - not a live socket
   // field, since sunsetr's events never carry coordinates.
+  //
+  // Explicitly targets "default" rather than the active configuration:
+  // this plugin's day/night force presets are deliberately static overrides
+  // with no latitude/longitude fields of their own (see
+  // sunsetr-ensure-preset), so reading "active" would go blank - not "no
+  // location configured", just "the current preset doesn't care about
+  // geography" - the instant either force preset is active. Pairs with
+  // setLocation() below, which writes to the same target.
   Process {
     id: locationProbe
-    command: ["sunsetr", "get", "--json", "latitude", "longitude"]
+    command: ["sunsetr", "get", "--target", "default", "--json", "latitude", "longitude"]
     stdout: StdioCollector {
       id: locationOut
       waitForEnd: true
@@ -389,6 +397,35 @@ Item {
 
   function shQuote(s) {
     return "'" + String(s).replace(/'/g, "'\\''") + "'"
+  }
+
+  // Switches to geo mode and writes new coordinates into the base config -
+  // not whatever preset happens to be active, since presets are for
+  // day/night temp/gamma variants, not separate geographies. Coordinates
+  // aren't part of the event socket's payload (see maybeGeocode above), so a
+  // successful write also kicks an immediate, unthrottled location probe
+  // rather than waiting on the throttled one requestLocationProbe schedules
+  // off the state_applied event this triggers when sunsetr is running.
+  function setLocation(lat, lon) {
+    var latNum = Number(lat), lonNum = Number(lon)
+    if (!isFinite(latNum) || !isFinite(lonNum)) return
+    setLocationProcess.command = ["sunsetr", "set", "--target", "default",
+      "transition_mode=geo", "latitude=" + latNum, "longitude=" + lonNum]
+    setLocationProcess.running = true
+  }
+
+  Process {
+    id: setLocationProcess
+    stdout: StdioCollector { id: setLocationOut; waitForEnd: true }
+    stderr: StdioCollector { id: setLocationErr; waitForEnd: true }
+    onExited: function(exitCode) {
+      if (exitCode === 0) {
+        root.lastError = ""
+        root.runLocationProbe()
+        return
+      }
+      root.lastError = root.extractError(String(setLocationOut.text || "") + String(setLocationErr.text || ""))
+    }
   }
 
   function applyPreset(name) {

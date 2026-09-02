@@ -26,6 +26,11 @@ its native Night Light service.
   yet, is offline, or the location has no name to give. The result is cached
   at `~/.cache/mark.sunsetr/geocode.json`, so the lookup only ever happens
   once per actual location change, not on every refresh or shell restart.
+- Click the location line to search for a new one: type a city name, pick a
+  match from the dropdown (or just press Enter for the top match), and
+  sunsetr switches to geo mode at that location immediately. Search is
+  powered by [Open-Meteo](https://open-meteo.com/)'s free, keyless
+  geocoding API.
 - CLI (`sunsetr-nightlight`) for keybindings: `toggle|on|off|auto|status|start|stop|refresh`.
 
 ## Install
@@ -43,18 +48,28 @@ bin/setup
 `bin/setup` (idempotent, asks before changing anything - pass `--yes` to
 skip prompts):
 
-1. Creates the `day`/`night` sunsetr presets if missing (also happens
+1. Enables sunsetr's own `systemd --user` unit and, if sunsetr isn't
+   already running some other way, starts it immediately - installing the
+   sunsetr package sets up neither of its two documented autostart methods
+   (a compositor `exec-once` line, or this systemd unit) on its own, and
+   without either the bar icon has nothing to connect to until you toggle
+   it manually, so it's stuck reading "loading..." forever. Skipped if
+   sunsetr wasn't installed via a package that ships the systemd unit, or
+   if a compositor `exec-once`/`spawn-at-startup` line already autostarts
+   it - that's the user's own choice of the other method, and enabling
+   systemd on top would double-start sunsetr on every subsequent boot.
+2. Creates the `day`/`night` sunsetr presets if missing (also happens
    lazily on first toggle, so this step isn't required before first use).
-2. Symlinks `sunsetr-nightlight` into `~/.local/bin`.
-3. Removes the stock `NightLight` indicator from `~/.config/omarchy/shell.json`.
-4. Disables Omarchy's native `omarchy.nightlight` service
+3. Symlinks `sunsetr-nightlight` into `~/.local/bin`.
+4. Removes the stock `NightLight` indicator from `~/.config/omarchy/shell.json`.
+5. Disables Omarchy's native `omarchy.nightlight` service
    (`omarchy plugin disable omarchy.nightlight`) - the indicator and the
    service are independent, so removing the icon alone leaves the native
    service still switchable elsewhere and fighting sunsetr for control of
    the display.
-5. Adds a `trigger.toggle.nightlight` menu override pointing at
+6. Adds a `trigger.toggle.nightlight` menu override pointing at
    `sunsetr-nightlight toggle`.
-6. Enables the plugin (`omarchy plugin enable mark.sunsetr`) if not already
+7. Enables the plugin (`omarchy plugin enable mark.sunsetr`) if not already
    enabled.
 
 Every file it edits gets a `.bak.sunsetr.<timestamp>` copy first.
