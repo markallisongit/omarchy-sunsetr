@@ -6,9 +6,9 @@ import qs.Ui
 import "SunsetrColor.js" as ColorModel
 import "SunsetrGeocode.js" as Geocode
 
-// Live sunsetr readout and control surface: left-click toggles day/night,
-// middle-click refreshes, right-click opens a popup with Auto/Day/Night
-// buttons. The icon's color runs from cool to warm amber as sunsetr's
+// Live sunsetr readout and control surface: left-click opens a popup with
+// Auto/Day/Night buttons, middle-click refreshes, right-click toggles
+// day/night. The icon's color runs from cool to warm amber as sunsetr's
 // current temperature moves from dayTemp to nightTemp, and its opacity
 // tracks gamma the same way your screen is actually dimming; at true peak
 // daytime the icon collapses to width 0, reappearing on hover.
@@ -314,11 +314,11 @@ BarWidget {
 
     onPressed: function(buttonCode) {
       if (!root.service) return
-      // Any click just explains why, rather than left/middle-click each
+      // Any click just explains why, rather than middle/right-click each
       // silently doing nothing (toggle()/refresh() are now no-ops here -
-      // see Service.qml) while only right-click's popup carried the reason.
+      // see Service.qml) while only left-click's popup carried the reason.
       if (root.service.sunsetrMissing) { root.popupOpen = true; return }
-      if (buttonCode === Qt.RightButton) { if (root.popupOpen) root.close(); else root.popupOpen = true }
+      if (buttonCode === Qt.LeftButton) { if (root.popupOpen) root.close(); else root.popupOpen = true }
       else if (buttonCode === Qt.MiddleButton) root.service.refresh()
       else root.service.toggle()
     }

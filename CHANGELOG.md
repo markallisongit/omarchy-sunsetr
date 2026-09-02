@@ -5,6 +5,16 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.7.1] - 2026-09-02
+
+### Changed
+
+- **Left-click now opens the popup and right-click toggles**, swapping the two
+  from every earlier release. The popup is the safe, informative action, so it
+  belongs on the button you hit by accident; forcing day/night - which
+  overrides sunsetr's schedule until you set it back - now needs a deliberate
+  right-click. Middle-click still refreshes.
+
 ## [0.7.0] - 2026-09-02
 
 Restores place names in the popup without needing shell.json edited by hand,
