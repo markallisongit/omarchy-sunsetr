@@ -12,10 +12,10 @@ its native Night Light service.
 - Icon color runs cool -> warm with sunsetr's live color temperature;
   opacity tracks gamma. Collapses to zero width at true peak daytime;
   hovering the bar's center section still peeks it in a fixed, muted state.
-- **Left-click**: toggle (force day/night, or back to automatic).
-- **Middle-click**: refresh.
-- **Right-click**: open the info popup (status, period countdown, and an
+- **Left-click**: open the info popup (status, period countdown, and an
   Auto/Day/Night switch).
+- **Middle-click**: refresh.
+- **Right-click**: toggle (force day/night, or back to automatic).
 - Forcing day/night fades in over `forceTransitionSeconds` (default 2s)
   instead of jumping instantly, using sunsetr's own per-preset `smoothing`/
   `startup_duration` fields.
