@@ -62,6 +62,9 @@ BarWidget {
   property bool popupOpen: false
   function close() {
     if (root.editingLocation) root.cancelEditingLocation()
+    // A consent prompt left expanded from a previous visit would be asking
+    // about coordinates the user has since stopped looking at.
+    root.showingGeocodeConsent = false
     popupOpen = false
   }
 
@@ -161,17 +164,44 @@ BarWidget {
   // click-to-edit affordance reachable even before any location has ever
   // been configured - e.g. a fresh static-mode setup, where sunsetr has no
   // latitude/longitude fields to read at all.
+  // No "Location:" prefix - the pin glyph the popup draws beside this says
+  // the same thing in less space, and the line is tight enough that a long
+  // place name needs every character it can get before eliding.
   readonly property string locationLine: {
     if (!service) return ""
-    if (service.placeName) return "Location: " + service.placeName
+    if (service.placeName) return service.placeName
     var loc = ColorModel.formatLocation(service.latitude, service.longitude)
-    return "Location: " + (loc || "not set")
+    return loc || "not set"
+  }
+
+  // Offered only when a lookup is the one remaining way to name this spot:
+  // a name already held locally needs no permission, because showing it
+  // sends nothing.
+  readonly property bool canOfferPlaceNameLookup:
+    !!service && service.needsGeocodeConsent && !service.placeNamesOptedIn
+
+  // The mirror image, so consent can be withdrawn from the same line that
+  // asked for it rather than only from the command line.
+  readonly property bool canWithdrawPlaceNameLookup:
+    !!service && service.placeNamesOptedIn
+
+  // The coordinates verbatim, at the precision they would actually be sent
+  // at - not formatLocation's 1dp display rounding. Consenting to send
+  // "52.2°N, 0.1°E" when 52.205300, 0.121800 is what leaves the machine
+  // would be consenting to the wrong thing.
+  readonly property string geocodeConsentCoords: {
+    if (!service || service.consentLat === null || service.consentLon === null) return ""
+    return String(service.consentLat) + ", " + String(service.consentLon)
   }
 
   // ---- Location editing. Clicking the popup's location line swaps it for a
   //      search field; picking a geocoded suggestion writes lat/lon straight
   //      into sunsetr's base config (see Service.qml's setLocation()).
   property bool editingLocation: false
+  // Whether the consent prompt is expanded. Opening it sends nothing - it
+  // only shows what *would* be sent, and to whom. Reset whenever the popup
+  // closes so it is never left hanging open from a previous visit.
+  property bool showingGeocodeConsent: false
   property var locationSuggestions: []
   property int suggestionIndex: 0
   property string geocodePendingQuery: ""
@@ -179,6 +209,7 @@ BarWidget {
 
   function startEditingLocation() {
     root.editingLocation = true
+    root.showingGeocodeConsent = false
     root.locationSuggestions = []
     root.suggestionIndex = 0
     Qt.callLater(function() {
@@ -196,7 +227,13 @@ BarWidget {
   function commitLocation() {
     var choice = Geocode.resolveLocationCommit(root.locationSuggestions, root.suggestionIndex)
     if (!choice) return
-    if (root.service) root.service.setLocation(choice.latitude, choice.longitude)
+    // The picked suggestion already carries its own name, so hand it over
+    // with the coordinates - there is no reason to ask a third party to
+    // reverse-geocode coordinates back into the name they just came from.
+    if (root.service) {
+      root.service.setLocation(choice.latitude, choice.longitude,
+        Geocode.formatSuggestionPlaceName(choice))
+    }
     root.cancelEditingLocation()
   }
 
@@ -330,55 +367,173 @@ BarWidget {
         }
       }
 
-      Row {
-        spacing: Style.space(6)
-        Rectangle {
-          width: Style.space(8)
-          height: Style.space(8)
-          radius: width / 2
-          anchors.verticalCenter: parent.verticalCenter
-          color: root.iconColor
-        }
-        Text {
-          text: root.statusLine
-          textFormat: Text.PlainText
-          color: root.bar.foreground
-          font.family: root.bar.fontFamily
-          font.pixelSize: Style.font.bodySmall
-        }
-      }
-
-      Text {
-        visible: root.periodLine !== ""
-        width: parent.width
-        text: root.periodLine
-        textFormat: Text.PlainText
-        color: Qt.darker(root.bar.foreground, 1.3)
-        font.family: root.bar.fontFamily
-        font.pixelSize: Style.font.bodySmall
-        elide: Text.ElideRight
-      }
-
-      Row {
+      Column {
         visible: !root.editingLocation && root.locationLine !== ""
         width: parent.width
         spacing: Style.space(4)
 
-        TapHandler {
-          onTapped: root.startEditingLocation()
-        }
-        HoverHandler {
-          cursorShape: Qt.PointingHandCursor
+        // Reads as a subtitle to the title above it - pin glyph, uppercase,
+        // letter-spaced and dimmed - rather than as another data row
+        // competing with the status and countdown below. Deliberately the
+        // same treatment omarchy.weather gives its own location line, since
+        // it is the same idea in the same bar: "this reading, for this place".
+        Row {
+          id: locationRow
+          width: parent.width
+          spacing: Style.space(6)
+
+          // Governs only the consent affordance's opacity, so the row's
+          // layout is identical hovered or not - revealing it must not
+          // shift the text beside it.
+          HoverHandler {
+            id: locationHover
+          }
+
+          Text {
+            id: pinIcon
+            text: ""  // nf-fa-map_marker, matching omarchy.weather
+            color: Qt.darker(root.bar.foreground, 1.4)
+            font.family: root.bar.fontFamily
+            font.pixelSize: Style.font.caption
+            anchors.verticalCenter: parent.verticalCenter
+          }
+
+          // Tap-to-edit lives on the text rather than the whole row, so the
+          // place-name affordance beside it is an unambiguously separate
+          // target: one changes where you are, the other decides whether
+          // coordinates may be sent, and a click must never do both.
+          Text {
+            id: locationText
+            width: Math.min(implicitWidth, parent.width - pinIcon.width - locationRow.spacing)
+            text: root.locationLine.toUpperCase()
+            textFormat: Text.PlainText
+            color: Qt.darker(root.bar.foreground, 1.4)
+            font.family: root.bar.fontFamily
+            font.pixelSize: Style.font.caption
+            font.letterSpacing: 1
+            elide: Text.ElideRight
+            anchors.verticalCenter: parent.verticalCenter
+
+            TapHandler {
+              onTapped: root.startEditingLocation()
+            }
+            HoverHandler {
+              cursorShape: Qt.PointingHandCursor
+            }
+          }
+
+          // Kept out of the way until asked for. Naming this spot is a rare,
+          // optional act - and for the opted-in case, withdrawing is rarer
+          // still - so neither earns a permanent line in a popup whose job
+          // is to report what the night light is doing. Hover reveals it;
+          // opacity rather than `visible` so nothing reflows when it appears.
+          Text {
+            id: placeNameAction
+            visible: root.canOfferPlaceNameLookup || root.canWithdrawPlaceNameLookup
+            opacity: (locationHover.hovered || root.showingGeocodeConsent) ? 1 : 0
+            Behavior on opacity { NumberAnimation { duration: 120 } }
+            width: Math.max(0, parent.width - pinIcon.width - locationText.width - locationRow.spacing * 2)
+            text: root.canOfferPlaceNameLookup
+              ? (root.showingGeocodeConsent ? "· cancel" : "· name this")
+              : "· stop lookups"
+            textFormat: Text.PlainText
+            color: Qt.darker(root.bar.foreground, 1.6)
+            font.family: root.bar.fontFamily
+            font.pixelSize: Style.font.caption
+            elide: Text.ElideRight
+            anchors.verticalCenter: parent.verticalCenter
+
+            TapHandler {
+              // Invisible text is still a live tap target, and a click that
+              // silently opts into a network call would be exactly the thing
+              // the consent flow exists to prevent.
+              enabled: placeNameAction.opacity > 0
+              onTapped: {
+                if (root.canWithdrawPlaceNameLookup) {
+                  // Withdrawal is immediate and needs no second prompt -
+                  // it can only ever reduce what is sent.
+                  root.showingGeocodeConsent = false
+                  if (root.service) root.service.setPlaceNameLookups(false)
+                } else {
+                  root.showingGeocodeConsent = !root.showingGeocodeConsent
+                }
+              }
+            }
+            HoverHandler {
+              cursorShape: Qt.PointingHandCursor
+            }
+          }
         }
 
-        Text {
+        // The consent prompt. Expanding it sends nothing: it exists to show
+        // what would be sent, and to whom, before the user decides. This is
+        // the pre-transfer step - Service.qml's lookup stops short of the
+        // network until the setting this writes says otherwise.
+        Rectangle {
+          visible: root.canOfferPlaceNameLookup && root.showingGeocodeConsent
           width: parent.width
-          text: root.locationLine
-          textFormat: Text.PlainText
-          color: Qt.darker(root.bar.foreground, 1.3)
-          font.family: root.bar.fontFamily
-          font.pixelSize: Style.font.caption
-          elide: Text.ElideRight
+          height: visible ? consentColumn.implicitHeight + Style.space(12) : 0
+          radius: Style.cornerRadius
+          color: Style.hoverFillFor(root.bar.foreground, Color.accent)
+
+          Column {
+            id: consentColumn
+            anchors.left: parent.left
+            anchors.leftMargin: Style.space(6)
+            anchors.right: parent.right
+            anchors.rightMargin: Style.space(6)
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: Style.space(6)
+
+            Text {
+              width: parent.width
+              text: "Look up place name?"
+              textFormat: Text.PlainText
+              color: root.bar.foreground
+              font.family: root.bar.fontFamily
+              font.pixelSize: Style.font.caption
+              wrapMode: Text.WordWrap
+            }
+
+            // The coordinates are quoted at the precision they would leave
+            // at, so what is agreed to is what is actually sent.
+            Text {
+              width: parent.width
+              text: "Sends your exact coordinates (" + root.geocodeConsentCoords +
+                ") to BigDataCloud, a third-party service, to get a place name. " +
+                "Nothing else is sent, and you can stop this again from this same line."
+              textFormat: Text.PlainText
+              color: Qt.darker(root.bar.foreground, 1.3)
+              font.family: root.bar.fontFamily
+              font.pixelSize: Style.font.caption
+              wrapMode: Text.WordWrap
+            }
+
+            Row {
+              spacing: Style.space(6)
+
+              Button {
+                text: "Look up"
+                bordered: true
+                foreground: root.bar.foreground
+                fontFamily: root.bar.fontFamily
+                fontSize: Style.font.caption
+                onClicked: {
+                  root.showingGeocodeConsent = false
+                  if (root.service) root.service.setPlaceNameLookups(true)
+                }
+              }
+
+              Button {
+                text: "Not now"
+                bordered: true
+                foreground: root.bar.foreground
+                fontFamily: root.bar.fontFamily
+                fontSize: Style.font.caption
+                onClicked: root.showingGeocodeConsent = false
+              }
+            }
+          }
         }
       }
 
@@ -477,6 +632,35 @@ BarWidget {
             }
           }
         }
+      }
+
+      Row {
+        spacing: Style.space(6)
+        Rectangle {
+          width: Style.space(8)
+          height: Style.space(8)
+          radius: width / 2
+          anchors.verticalCenter: parent.verticalCenter
+          color: root.iconColor
+        }
+        Text {
+          text: root.statusLine
+          textFormat: Text.PlainText
+          color: root.bar.foreground
+          font.family: root.bar.fontFamily
+          font.pixelSize: Style.font.bodySmall
+        }
+      }
+
+      Text {
+        visible: root.periodLine !== ""
+        width: parent.width
+        text: root.periodLine
+        textFormat: Text.PlainText
+        color: Qt.darker(root.bar.foreground, 1.3)
+        font.family: root.bar.fontFamily
+        font.pixelSize: Style.font.bodySmall
+        elide: Text.ElideRight
       }
 
       Text {

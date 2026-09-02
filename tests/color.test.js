@@ -179,4 +179,27 @@ assert.equal(C.parseGeocodeCache(JSON.stringify({ lat: 52.1, lon: -0.5 }), 52.1,
 assert.equal(C.parseGeocodeCache(JSON.stringify({ lat: 52.1, lon: -0.5, placeName: "" }), 52.1, -0.5), null,
   "an empty cached name is treated as no cache, so it's retried rather than displayed")
 
+
+
+// --- Where a cached place name came from ---------------------------------
+// Withdrawing consent forgets what a lookup produced but keeps a name taken
+// from a suggestion the user picked, so the cache records which it was.
+assert.equal(C.parseGeocodeCacheSource(
+  JSON.stringify({ lat: 1, lon: 2, placeName: "Cambridge", source: "picker" })), "picker")
+assert.equal(C.parseGeocodeCacheSource(
+  JSON.stringify({ lat: 1, lon: 2, placeName: "Cambridge", source: "lookup" })), "lookup")
+
+// A cache written before the field existed, or with an unrecognised value, is
+// treated as a lookup: assuming the more sensitive origin is the safe way to
+// be wrong, since it means revocation forgets it.
+assert.equal(C.parseGeocodeCacheSource(
+  JSON.stringify({ lat: 1, lon: 2, placeName: "Cambridge" })), "lookup")
+assert.equal(C.parseGeocodeCacheSource(
+  JSON.stringify({ lat: 1, lon: 2, placeName: "Cambridge", source: "elsewhere" })), "lookup")
+
+// Nothing readable there at all - no source to report, and no throw.
+assert.equal(C.parseGeocodeCacheSource(""), "")
+assert.equal(C.parseGeocodeCacheSource("not json"), "")
+assert.equal(C.parseGeocodeCacheSource("null"), "")
+
 console.log("ok")

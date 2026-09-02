@@ -188,6 +188,25 @@ function parseGeocodeCache(text, lat, lon) {
   return name ? name : null
 }
 
+// Which of the two name sources the cached entry came from: a suggestion the
+// user picked ("picker" - never left this machine) or a reverse-geocode
+// lookup ("lookup" - obtained under consent, and forgotten when it is
+// withdrawn). Read separately from parseGeocodeCache rather than widening its
+// return value, since every other caller only ever wants the name. "" for a
+// cache written before this field existed, which is treated as a lookup:
+// assuming the more sensitive origin is the safe way to be wrong.
+function parseGeocodeCacheSource(text) {
+  if (!text) return ""
+  var data
+  try {
+    data = JSON.parse(text)
+  } catch (e) {
+    return ""
+  }
+  if (!data || typeof data !== "object") return ""
+  return data.source === "picker" ? "picker" : "lookup"
+}
+
 if (typeof module !== "undefined") {
   module.exports = {
     clamp01: clamp01,
@@ -203,6 +222,7 @@ if (typeof module !== "undefined") {
     formatLocation: formatLocation,
     formatPlaceName: formatPlaceName,
     coordsMatch: coordsMatch,
-    parseGeocodeCache: parseGeocodeCache
+    parseGeocodeCache: parseGeocodeCache,
+    parseGeocodeCacheSource: parseGeocodeCacheSource
   }
 }

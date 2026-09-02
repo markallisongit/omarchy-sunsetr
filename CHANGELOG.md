@@ -5,6 +5,75 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.7.0] - 2026-09-02
+
+Restores place names in the popup without needing shell.json edited by hand,
+and replaces 0.6.0's off-by-default setting with a real pre-transfer consent
+flow - which is what the marketplace review asked for. Consent now gates
+*transmission*, not display: a name already on this machine is shown without
+asking, because showing it sends nothing.
+
+### Added
+
+- **A place name for every location you pick.** The search dropdown already
+  returns each result's name alongside its coordinates, and that name is now
+  kept when you commit the choice. Setting your location from the widget
+  therefore names it immediately - no lookup, no third party, nothing sent.
+- **A consent prompt in the popup.** For a location that came from
+  `sunsetr.toml` instead, the location line offers "show place name". That
+  expands a prompt naming BigDataCloud and quoting the exact coordinates that
+  would be sent - at the precision they would be sent at, not the display
+  rounding - with **Look up** and **Not now**. Expanding it sends nothing;
+  only Look up does.
+- **Withdrawal from the same line.** Once on, the line offers "stop lookups",
+  which turns the setting off, clears the resolved name and deletes it from
+  the cache. A name that came from a picked suggestion is kept, since it never
+  left the machine and there is nothing about it to withdraw.
+
+### Changed
+
+- **The location line is now the popup's subtitle**, sitting directly under
+  the "Night Light" title instead of below the countdown, drawn with a map
+  pin and the same uppercase, letter-spaced, dimmed treatment
+  `omarchy.weather` gives its own location. It's the same idea in the same
+  bar - "this reading, for this place" - so it reads as identity rather than
+  as a third data row. The redundant "Location:" prefix is gone; the pin says
+  it in less space, leaving more room before a long place name elides.
+- **The place-name affordance only appears on hover.** Naming a location is a
+  rare, optional act, and withdrawing consent is rarer still, so neither
+  earns a permanent line in a popup whose job is reporting what the night
+  light is doing. It fades in over the location line on hover and is
+  untappable while hidden, so a stray click can't opt you into a lookup.
+  Wording shortened to "· name this".
+- `resolvePlaceNames` is still off by default, but is no longer the only way
+  in: the popup's prompt sets it through `omarchy bar set`, Omarchy's own
+  CLI, so the plugin never writes to `shell.json` itself.
+- The consent check moved from the top of `maybeGeocode()` to after the memo
+  and on-disk cache have been consulted. Everything before it is local, so
+  gating it achieved nothing except hiding names that were already here.
+- A cached name written before this release reads back as lookup-sourced and
+  is re-asked about rather than displayed, so an upgrade never shows a name
+  obtained without a consent flow.
+
+### Fixed
+
+- **`bin/setup` could abort with exit 1 and no output at all.** Three checks
+  captured a command's output into a variable with stderr discarded; under
+  `set -euo pipefail` a failure there aborts the script, and with stderr gone
+  it aborted in total silence. All three now let the underlying error through
+  and add their own line saying which step gave up. Hit for real when running
+  setup over SSH, where bash skips `~/.bashrc`, leaving `OMARCHY_PATH` unset
+  so every `omarchy` subcommand exits nonzero. They fail rather than skip
+  deliberately: if the plugin list can't be read, the `omarchy plugin
+  disable`/`enable` calls that follow can't work either, and a skip would
+  half-apply the install without saying so.
+
+- `sunsetr get --json latitude longitude` reports coordinates rounded to one
+  decimal place (`"51.9"` for a stored `51.879670`), so a picked name filed
+  under the coordinates it was picked at was filed where nothing would ever
+  look it up. The name is now claimed by the probe that follows the location
+  change and stored under the coordinates that probe reports.
+
 ## [0.6.1] - 2026-09-02
 
 Follow-up to the 0.6.0 marketplace security review, covering two things the

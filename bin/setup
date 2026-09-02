@@ -102,9 +102,12 @@ install_cli() {
 remove_nightlight_indicator() {
   [[ -f $SHELL_JSON ]] || return 0
   local already_excluded
+  # Same reason as the plugin-list reads: an unparseable shell.json would
+  # otherwise abort the install part-way through with only jq's own error and
+  # nothing saying which file or step it died on.
   already_excluded=$(jq --argjson defaults "$DEFAULT_INDICATORS" '
     [.bar.layout // {} | to_entries[] | .value[]? | select(.id == "omarchy.indicators") | ((.items // $defaults) | index("NightLight"))] | any
-  ' "$SHELL_JSON")
+  ' "$SHELL_JSON") || fail "could not read $SHELL_JSON - is it valid JSON?"
   [[ $already_excluded == "false" ]] && return 0
 
   confirm "Remove the stock NightLight indicator from shell.json?" || return 0
@@ -139,9 +142,17 @@ remove_nightlight_indicator() {
 # display's gamma/temperature.
 disable_native_nightlight() {
   local enabled
-  enabled=$(omarchy plugin list --json 2>/dev/null | jq -r '
+  # Not `2>/dev/null`, and not left bare: under `set -euo pipefail` a failing
+  # `omarchy plugin list` makes this assignment fail, which aborts the whole
+  # script - and with stderr discarded it aborts with no output whatsoever.
+  # (Seen for real: over SSH, bash skips ~/.bashrc, so OMARCHY_PATH is unset
+  # and every omarchy subcommand exits nonzero.) Every other failure here
+  # says why, so this one does too. Skipping instead would be worse: if the
+  # plugin list can't be read, `omarchy plugin disable/enable` below can't
+  # work either, and the install would half-apply in silence.
+  enabled=$(omarchy plugin list --json | jq -r '
     [.[] | select(.id == "omarchy.nightlight" and .enabled == true)] | any
-  ')
+  ') || fail "could not read the plugin list ('omarchy plugin list --json' failed - is OMARCHY_PATH set?)"
   [[ $enabled == "true" ]] || return 0
 
   confirm "Disable Omarchy's built-in Night Light service (mark.sunsetr replaces it)?" || return 0
@@ -189,9 +200,11 @@ enable_plugin() {
   # disabled entry just as readily as an enabled one and short-circuits
   # before `enable` ever runs. --json exposes the actual boolean.
   local already_enabled
-  already_enabled=$(omarchy plugin list --json 2>/dev/null | jq -r '
+  # Same silent-abort trap as disable_native_nightlight above - see the note
+  # there for why stderr stays visible and why this fails rather than skips.
+  already_enabled=$(omarchy plugin list --json | jq -r '
     [.[] | select(.id == "mark.sunsetr" and .enabled == true)] | any
-  ')
+  ') || fail "could not read the plugin list ('omarchy plugin list --json' failed - is OMARCHY_PATH set?)"
   [[ $already_enabled == "true" ]] && return 0
   omarchy plugin enable mark.sunsetr center || fail "could not enable mark.sunsetr - is it added via 'omarchy plugin add'?"
 }
