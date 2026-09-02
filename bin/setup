@@ -184,24 +184,42 @@ require_sunsetr() {
   fail "sunsetr is not installed. Install it first, then re-run this setup: https://github.com/psi4j/sunsetr"
 }
 
-# sunsetr's package ships its own systemd --user unit, but package managers
-# never enable a unit on install, and nothing else here starts sunsetr either
-# - Service.qml only ever launches it in response to a toggle/force click
-# (see its ensureRunningAndApply), so a config that's never been toggled once
-# leaves the bar widget stuck on "loading..." forever after a fresh install.
-# Skip silently if sunsetr wasn't installed via a package that ships this
-# unit (e.g. built from source) - that's not this script's problem to solve.
-#
+# sunsetr's own docs (https://psi4j.github.io/sunsetr/quick-start.html)
+# present two independent, equally-official autostart methods - a compositor
+# `exec-once`/`spawn-at-startup` line, or `systemctl --user enable --now
+# sunsetr.service` - and installing the package sets up neither one for you.
+# Service.qml only ever launches sunsetr in response to a toggle/force click
+# (see its ensureRunningAndApply), so a fresh install with no autostart
+# configured at all leaves the bar widget stuck on "loading..." forever.
+# Skip entirely if sunsetr wasn't installed via a package that ships the
+# systemd unit (e.g. built from source) - not this script's problem to solve.
+compositor_autostarts_sunsetr() {
+  # GNU grep exits 2 (not the "no match" 1) when any argument path is
+  # missing, even if another one matched - so passing both dirs unconditionally
+  # and relying on `&& return 0` would silently never trigger on the (common)
+  # Hyprland-only setup with no ~/.config/niri at all. Only grep dirs that exist.
+  local dirs=() d
+  for d in "$HOME/.config/hypr" "$HOME/.config/niri"; do
+    [[ -d $d ]] && dirs+=("$d")
+  done
+  (( ${#dirs[@]} )) || return 1
+  grep -rqE '^[[:space:]]*(exec-once|spawn-at-startup)\b.*\bsunsetr\b' "${dirs[@]}" 2>/dev/null
+}
+
 # Enabling and starting are handled separately (never a bare `enable --now`):
-# a sunsetr already running - started by hand, by a user's own exec-once, or
-# by a previous toggle through this plugin's own uwsm-app fallback - is
-# invisible to systemd's unit state (`is-active` reports "inactive" for it
-# regardless), so `--now` there would spawn a second, duplicate sunsetr
-# fighting the first one for the display and the event socket. Enabling is
-# always safe to repeat (just (re)writes the .wants symlink); starting only
-# happens when no sunsetr process exists at all.
+# a sunsetr already running - started by hand, or by a previous toggle
+# through this plugin's own uwsm-app fallback - is invisible to systemd's
+# unit state (`is-active` reports "inactive" for it regardless), so `--now`
+# there would spawn a second, duplicate sunsetr fighting the first one for
+# the display and the event socket. Enabling is always safe to repeat (just
+# (re)writes the .wants symlink); starting only happens when no sunsetr
+# process exists at all.
 enable_sunsetr_service() {
   systemctl --user list-unit-files sunsetr.service >/dev/null 2>&1 || return 0
+  # A compositor-configured autostart is the user's own choice of the other
+  # official method - enabling systemd on top would double-start sunsetr on
+  # every subsequent boot, not just right now, so leave it alone entirely.
+  compositor_autostarts_sunsetr && return 0
   local already_running=0 enabled
   pgrep -x sunsetr >/dev/null && already_running=1
   enabled=$(systemctl --user is-enabled sunsetr.service 2>/dev/null || true)

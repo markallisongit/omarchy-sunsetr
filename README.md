@@ -45,10 +45,14 @@ skip prompts):
 
 1. Enables sunsetr's own `systemd --user` unit and, if sunsetr isn't
    already running some other way, starts it immediately - installing the
-   sunsetr package never enables its service on its own, and without it
-   the bar icon has nothing to connect to until you toggle it manually, so
-   it's stuck reading "loading..." forever. Skipped if sunsetr wasn't
-   installed via a package that ships this unit.
+   sunsetr package sets up neither of its two documented autostart methods
+   (a compositor `exec-once` line, or this systemd unit) on its own, and
+   without either the bar icon has nothing to connect to until you toggle
+   it manually, so it's stuck reading "loading..." forever. Skipped if
+   sunsetr wasn't installed via a package that ships the systemd unit, or
+   if a compositor `exec-once`/`spawn-at-startup` line already autostarts
+   it - that's the user's own choice of the other method, and enabling
+   systemd on top would double-start sunsetr on every subsequent boot.
 2. Creates the `day`/`night` sunsetr presets if missing (also happens
    lazily on first toggle, so this step isn't required before first use).
 3. Symlinks `sunsetr-nightlight` into `~/.local/bin`.

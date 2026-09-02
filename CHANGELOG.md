@@ -8,11 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [0.4.1] - 2026-09-02
 
 - Fixed: on a fresh install, the bar icon could get stuck reading
-  "loading..." forever. Installing the sunsetr package never enables its
-  systemd `--user` service on its own, and nothing else starts sunsetr
-  automatically either - `bin/setup` now enables the service (and starts it
-  immediately if sunsetr isn't already running some other way, so it never
-  spawns a second, duplicate sunsetr).
+  "loading..." forever. Installing the sunsetr package sets up neither of
+  its two documented autostart methods (a compositor `exec-once` line, or
+  its systemd `--user` service) on its own - `bin/setup` now enables and
+  starts the systemd service, unless sunsetr is already running some other
+  way (no duplicate process) or a compositor autostart line already covers
+  it (no double-start on the next boot).
 
 ## [0.4.0] - 2026-08-31
 
