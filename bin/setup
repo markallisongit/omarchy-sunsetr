@@ -206,6 +206,18 @@ compositor_autostarts_sunsetr() {
   grep -rqE '^[[:space:]]*(exec-once|spawn-at-startup)\b.*\bsunsetr\b' "${dirs[@]}" 2>/dev/null
 }
 
+# sunsetr.service is Type=simple, so `systemctl --user start` returns as soon
+# as the process forks - well before sunsetr has connected to the compositor
+# backend and opened its control socket. create_presets runs right after this
+# and needs that socket (`sunsetr get`), so a freshly-started sunsetr needs to
+# be waited on. Same socket path and wait pattern as Service.qml's own
+# readiness probe.
+wait_for_sunsetr_socket() {
+  local socket="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/sunsetr-events.sock"
+  timeout 30 sh -c 'until [ -S "$0" ]; do sleep 0.1; done' "$socket" ||
+    fail "sunsetr did not become ready within 30s of starting"
+}
+
 # Enabling and starting are handled separately (never a bare `enable --now`):
 # a sunsetr already running - started by hand, or by a previous toggle
 # through this plugin's own uwsm-app fallback - is invisible to systemd's
@@ -227,7 +239,10 @@ enable_sunsetr_service() {
 
   confirm "Enable sunsetr's systemd service (so it runs automatically)?" || return 0
   systemctl --user enable sunsetr.service || fail "could not enable sunsetr.service"
-  (( already_running )) || systemctl --user start sunsetr.service || fail "could not start sunsetr.service"
+  if (( ! already_running )); then
+    systemctl --user start sunsetr.service || fail "could not start sunsetr.service"
+    wait_for_sunsetr_socket
+  fi
 }
 
 do_install() {
