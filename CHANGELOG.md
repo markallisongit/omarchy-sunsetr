@@ -32,6 +32,19 @@ asking, because showing it sends nothing.
 
 ### Changed
 
+- **The location line is now the popup's subtitle**, sitting directly under
+  the "Night Light" title instead of below the countdown, drawn with a map
+  pin and the same uppercase, letter-spaced, dimmed treatment
+  `omarchy.weather` gives its own location. It's the same idea in the same
+  bar - "this reading, for this place" - so it reads as identity rather than
+  as a third data row. The redundant "Location:" prefix is gone; the pin says
+  it in less space, leaving more room before a long place name elides.
+- **The place-name affordance only appears on hover.** Naming a location is a
+  rare, optional act, and withdrawing consent is rarer still, so neither
+  earns a permanent line in a popup whose job is reporting what the night
+  light is doing. It fades in over the location line on hover and is
+  untappable while hidden, so a stray click can't opt you into a lookup.
+  Wording shortened to "· name this".
 - `resolvePlaceNames` is still off by default, but is no longer the only way
   in: the popup's prompt sets it through `omarchy bar set`, Omarchy's own
   CLI, so the plugin never writes to `shell.json` itself.
