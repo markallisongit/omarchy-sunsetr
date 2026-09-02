@@ -184,8 +184,27 @@ require_sunsetr() {
   fail "sunsetr is not installed. Install it first, then re-run this setup: https://github.com/psi4j/sunsetr"
 }
 
+# sunsetr's package ships its own systemd --user unit, but package managers
+# never enable a unit on install, and nothing else here starts sunsetr either
+# - Service.qml only ever launches it in response to a toggle/force click
+# (see its ensureRunningAndApply), so a config that's never been toggled once
+# leaves the bar widget stuck on "loading..." forever after a fresh install.
+# Skip silently if sunsetr wasn't installed via a package that ships this
+# unit (e.g. built from source) - that's not this script's problem to solve.
+enable_sunsetr_service() {
+  systemctl --user list-unit-files sunsetr.service >/dev/null 2>&1 || return 0
+  local enabled active
+  enabled=$(systemctl --user is-enabled sunsetr.service 2>/dev/null || true)
+  active=$(systemctl --user is-active sunsetr.service 2>/dev/null || true)
+  [[ $enabled == "enabled" && $active == "active" ]] && return 0
+
+  confirm "Enable and start sunsetr's systemd service (so it runs automatically)?" || return 0
+  systemctl --user enable --now sunsetr.service || fail "could not enable sunsetr.service"
+}
+
 do_install() {
   require_sunsetr
+  enable_sunsetr_service
   create_presets
   install_cli
   # disable_native_nightlight persists shell.json from the live shell's

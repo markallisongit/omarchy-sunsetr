@@ -43,18 +43,24 @@ bin/setup
 `bin/setup` (idempotent, asks before changing anything - pass `--yes` to
 skip prompts):
 
-1. Creates the `day`/`night` sunsetr presets if missing (also happens
+1. Enables and starts sunsetr's own `systemd --user` unit if it isn't
+   already running - installing the sunsetr package never enables its
+   service on its own, and without it the bar icon has nothing to connect
+   to until you toggle it manually, so it's stuck reading "loading..."
+   forever. Skipped if sunsetr wasn't installed via a package that ships
+   this unit.
+2. Creates the `day`/`night` sunsetr presets if missing (also happens
    lazily on first toggle, so this step isn't required before first use).
-2. Symlinks `sunsetr-nightlight` into `~/.local/bin`.
-3. Removes the stock `NightLight` indicator from `~/.config/omarchy/shell.json`.
-4. Disables Omarchy's native `omarchy.nightlight` service
+3. Symlinks `sunsetr-nightlight` into `~/.local/bin`.
+4. Removes the stock `NightLight` indicator from `~/.config/omarchy/shell.json`.
+5. Disables Omarchy's native `omarchy.nightlight` service
    (`omarchy plugin disable omarchy.nightlight`) - the indicator and the
    service are independent, so removing the icon alone leaves the native
    service still switchable elsewhere and fighting sunsetr for control of
    the display.
-5. Adds a `trigger.toggle.nightlight` menu override pointing at
+6. Adds a `trigger.toggle.nightlight` menu override pointing at
    `sunsetr-nightlight toggle`.
-6. Enables the plugin (`omarchy plugin enable mark.sunsetr`) if not already
+7. Enables the plugin (`omarchy plugin enable mark.sunsetr`) if not already
    enabled.
 
 Every file it edits gets a `.bak.sunsetr.<timestamp>` copy first.
