@@ -426,14 +426,30 @@ BarWidget {
             radius: Style.cornerRadius
             color: index === root.suggestionIndex ? Style.hoverFillFor(root.bar.foreground, Color.accent) : "transparent"
 
+            // Anchored on both sides (rather than left-only) so the Row has
+            // an explicit width to divide between the two labels below. A
+            // Row that sizes to its children can't bound them - the children
+            // would have to read back a width derived from themselves.
             Row {
               id: suggestionRow
               anchors.left: parent.left
               anchors.leftMargin: Style.space(6)
+              anchors.right: parent.right
+              anchors.rightMargin: Style.space(6)
               anchors.verticalCenter: parent.verticalCenter
               spacing: Style.space(6)
 
+              // Bounded + elided so a long suggestion is clipped to the card
+              // instead of stretching the dropdown past it.
+              // SunsetrGeocode.js already caps how many characters either of
+              // these strings can carry; this is what keeps a merely-verbose
+              // real place name from widening the popup. The name takes what
+              // it needs up to the full row, and the description gets
+              // whatever is genuinely left over.
               Text {
+                id: suggestionName
+                width: Math.min(implicitWidth, suggestionRow.width)
+                elide: Text.ElideRight
                 text: modelData.name
                 textFormat: Text.PlainText
                 color: index === root.suggestionIndex ? Style.hoverStateColor(root.bar.foreground, Color.accent) : root.bar.foreground
@@ -442,6 +458,8 @@ BarWidget {
               }
               Text {
                 visible: text !== ""
+                width: Math.max(0, suggestionRow.width - suggestionName.width - suggestionRow.spacing)
+                elide: Text.ElideRight
                 text: modelData.description
                 textFormat: Text.PlainText
                 color: Qt.darker(root.bar.foreground, 1.5)

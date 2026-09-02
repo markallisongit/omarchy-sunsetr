@@ -210,10 +210,18 @@ Item {
       // a crash) mid-write can never leave a torn/partial cache file behind -
       // the rename is atomic, so a reader always sees either the old
       // complete file or the new one, never a half-written one.
+      //
+      // mktemp rather than a fixed "geocode.json.tmp": that path was
+      // predictable and sat in a user-writable directory, so a symlink
+      // planted there ahead of time would have been followed and the redirect
+      // would have written through it. Same fix, and the same reasoning, as
+      // bin/setup's config writes. Created in geocodeCacheDir so the mv stays
+      // a same-filesystem atomic rename.
       geocodeCacheWriteProcess.command = ["bash", "-lc",
-        "mkdir -p " + shQuote(root.geocodeCacheDir) + " && printf '%s' " + shQuote(payload) +
-        " > " + shQuote(root.geocodeCacheFile + ".tmp") +
-        " && mv " + shQuote(root.geocodeCacheFile + ".tmp") + " " + shQuote(root.geocodeCacheFile)]
+        "mkdir -p " + shQuote(root.geocodeCacheDir) +
+        " && tmp=$(mktemp " + shQuote(root.geocodeCacheFile + ".XXXXXX") + ")" +
+        " && printf '%s' " + shQuote(payload) + ' > "$tmp"' +
+        " && mv \"$tmp\" " + shQuote(root.geocodeCacheFile)]
       geocodeCacheWriteProcess.running = true
     }
   }

@@ -139,12 +139,19 @@ function countryAbbrev(countryCode) {
 // is a narrow fixed-width card, not a report. "" only when the response has
 // no usable text at all, which tells the caller to fall back to raw
 // coordinates instead.
+// Bounds the assembled name the same way SunsetrGeocode.js bounds search
+// suggestions: this is remote text landing in a narrow fixed-width line, so
+// cap what a misbehaving (or tampered-with) API can hand the shell to lay
+// out. Generous enough that no real "City, CC" pair is ever clipped - the
+// countryCode preference above already keeps the long half short.
+var MAX_PLACE_NAME_CHARS = 80
+
 function formatPlaceName(geo) {
   if (!geo || typeof geo !== "object") return ""
   var primary = firstNonBlankString(geo.city, geo.locality, geo.principalSubdivision)
   var country = countryAbbrev(geo.countryCode) || firstNonBlankString(geo.countryName)
-  if (primary && country) return primary + ", " + country
-  return primary || country
+  var name = (primary && country) ? primary + ", " + country : (primary || country)
+  return name.length > MAX_PLACE_NAME_CHARS ? name.slice(0, MAX_PLACE_NAME_CHARS) : name
 }
 
 // Same location, within float round-trip noise (JSON stringify/parse, string
@@ -173,7 +180,11 @@ function parseGeocodeCache(text, lat, lon) {
   }
   if (!data || typeof data !== "object") return null
   if (!coordsMatch(data.lat, data.lon, lat, lon)) return null
+  // Bounded on the way back out too, not just when formatPlaceName wrote it:
+  // the cache is a plain file in a user-writable directory, so what comes
+  // back isn't necessarily what this widget put there.
   var name = typeof data.placeName === "string" ? data.placeName.trim() : ""
+  if (name.length > MAX_PLACE_NAME_CHARS) name = name.slice(0, MAX_PLACE_NAME_CHARS)
   return name ? name : null
 }
 
