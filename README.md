@@ -43,12 +43,12 @@ bin/setup
 `bin/setup` (idempotent, asks before changing anything - pass `--yes` to
 skip prompts):
 
-1. Enables and starts sunsetr's own `systemd --user` unit if it isn't
-   already running - installing the sunsetr package never enables its
-   service on its own, and without it the bar icon has nothing to connect
-   to until you toggle it manually, so it's stuck reading "loading..."
-   forever. Skipped if sunsetr wasn't installed via a package that ships
-   this unit.
+1. Enables sunsetr's own `systemd --user` unit and, if sunsetr isn't
+   already running some other way, starts it immediately - installing the
+   sunsetr package never enables its service on its own, and without it
+   the bar icon has nothing to connect to until you toggle it manually, so
+   it's stuck reading "loading..." forever. Skipped if sunsetr wasn't
+   installed via a package that ships this unit.
 2. Creates the `day`/`night` sunsetr presets if missing (also happens
    lazily on first toggle, so this step isn't required before first use).
 3. Symlinks `sunsetr-nightlight` into `~/.local/bin`.

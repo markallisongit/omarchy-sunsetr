@@ -10,8 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Fixed: on a fresh install, the bar icon could get stuck reading
   "loading..." forever. Installing the sunsetr package never enables its
   systemd `--user` service on its own, and nothing else starts sunsetr
-  automatically either - `bin/setup` now enables and starts it as part of
-  install.
+  automatically either - `bin/setup` now enables the service (and starts it
+  immediately if sunsetr isn't already running some other way, so it never
+  spawns a second, duplicate sunsetr).
 
 ## [0.4.0] - 2026-08-31
 
