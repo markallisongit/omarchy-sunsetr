@@ -26,16 +26,20 @@ its native Night Light service.
   geocoding API. **The place name comes with it** - a location set this way
   shows as "Cambridge, United Kingdom" straight away, with no lookup and
   nothing sent anywhere, because the search already returned the name.
+- The location sits directly under the popup's title, with a map pin, styled
+  the way Omarchy's own weather widget styles its location line.
 - For a location that came from `sunsetr.toml` rather than the search box,
-  the popup shows raw coordinates and offers a **"show place name"** link
-  beside them. That opens a prompt naming
+  the popup shows raw coordinates, and hovering that line reveals a
+  **"name this"** link. That opens a prompt naming
   [BigDataCloud](https://www.bigdatacloud.com/) and showing the exact
   coordinates that would be sent to it, with **Look up** and **Not now**.
   Nothing leaves your machine until you choose Look up. That choice is
   remembered (it sets `resolvePlaceNames` below, via `omarchy bar set`), so
-  you're asked once rather than every time - and the same line then offers
-  **"stop lookups"** to withdraw it, which also forgets the name that was
-  looked up and deletes it from the cache.
+  you're asked once rather than every time - and hovering the same line then
+  offers **"stop lookups"** to withdraw it, which also forgets the name that
+  was looked up and deletes it from the cache. Neither link occupies a
+  permanent line: naming a location is a one-off, so it stays out of the way
+  until you go looking for it.
 - Resolved names are cached at `~/.cache/mark.sunsetr/geocode.json`, so a
   lookup happens at most once per actual location change, not on every
   refresh or shell restart.
