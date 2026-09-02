@@ -125,6 +125,24 @@ assert.equal(C.formatPlaceName({}), "", "nothing usable -> empty, not 'undefined
 assert.equal(C.formatPlaceName(null), "")
 assert.equal(C.formatPlaceName(undefined), "")
 assert.equal(C.formatPlaceName("not an object"), "")
+
+// Bounded like the search suggestions in SunsetrGeocode.js: this is remote
+// text landing in a narrow fixed-width line, so a misbehaving API can't hand
+// the shell an arbitrarily long name to lay out.
+assert.equal(C.formatPlaceName({ city: "c".repeat(500), countryCode: "GB" }).length, 80,
+  "an overlong city is clipped, not rendered in full")
+assert.equal(C.formatPlaceName({ city: "Cambridge", countryCode: "GB" }), "Cambridge, GB",
+  "a name that fits is passed through untouched")
+
+// The on-disk cache is bounded on read too - it's a plain file in a
+// user-writable directory, so what comes back isn't necessarily what
+// formatPlaceName put there.
+assert.equal(
+  C.parseGeocodeCache(JSON.stringify({ lat: 52.2, lon: 0.12, placeName: "p".repeat(500) }), 52.2, 0.12).length,
+  80)
+assert.equal(
+  C.parseGeocodeCache(JSON.stringify({ lat: 52.2, lon: 0.12, placeName: "Cambridge, GB" }), 52.2, 0.12),
+  "Cambridge, GB")
 assert.equal(C.formatPlaceName({ city: "", countryCode: "GB" }), "GB",
   "empty-string city is treated as absent, not as a real (blank) name")
 assert.equal(C.formatPlaceName({ city: "   " }), "", "whitespace-only city is treated as absent")

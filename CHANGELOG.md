@@ -5,6 +5,24 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.6.1] - 2026-09-02
+
+Follow-up to the 0.6.0 marketplace security review, covering two things the
+review asked for that 0.6.0 only partly delivered:
+
+- The geocode cache write in `Service.qml` still used a predictable
+  `geocode.json.tmp` path in a user-writable directory - the same class of
+  issue 0.6.0 fixed for `bin/setup`'s config writes, just in a file that pass
+  didn't touch. It now writes through an `mktemp`-generated temp file in the
+  cache directory before the atomic rename.
+- Remote text is now **bounded**, not just rendered as plain text. Search
+  suggestion names and descriptions are capped in length (80/120 characters)
+  and the result list is capped at 5 client-side, so a geocoder that ignores
+  the query's `count=5` can't flood the dropdown. The reverse-geocoded place
+  name is capped the same way, both when formatted and when read back from
+  the on-disk cache. The suggestion rows now elide rather than widening the
+  popup.
+
 ## [0.6.0] - 2026-09-02
 
 Addresses the marketplace security review of 0.5.0:
