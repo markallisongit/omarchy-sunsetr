@@ -535,18 +535,11 @@ Item {
       return
     }
     var duration = Number(setting("forceTransitionSeconds", 2))
-    // Prefer the absolute path to our bundled sunsetr-ensure-preset script:
-    // the installer never puts it on PATH (only bin/sunsetr-nightlight gets
-    // symlinked into ~/.local/bin), so a bare command name reliably fails
-    // with "command not found". manifest.__sourceDir is stamped by
-    // PluginRegistry.qml with this plugin's own source directory and
-    // injected onto every service instance by shell.qml's ensureService(),
-    // so it's normally available; fall back to the bare name only if
-    // manifest hasn't been injected yet, so PATH-based resolution is at
-    // least attempted rather than silently doing nothing.
-    var ensureScript = (root.manifest && root.manifest.__sourceDir)
-      ? shQuote(root.manifest.__sourceDir + "/bin/sunsetr-ensure-preset")
-      : "sunsetr-ensure-preset"
+    // Resolve beside this QML file: Omarchy strips __sourceDir from the
+    // manifest exposed to third-party plugins, and this helper isn't on
+    // PATH. Decode the file URL before shell-quoting paths with spaces etc.
+    var ensureScript = shQuote(decodeURIComponent(
+      String(Qt.resolvedUrl("bin/sunsetr-ensure-preset")).replace(/^file:\/\//, "")))
     var ensureStep = name === "default"
       ? ""
       : ensureScript + " " + shQuote(name) + " " + shQuote(name === String(setting("dayPreset", "day")) ? "day" : "night") + " " + shQuote(String(duration)) + " || exit 1; "
