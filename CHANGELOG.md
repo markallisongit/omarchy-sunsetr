@@ -5,6 +5,15 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.7.2] - 2026-09-09
+
+### Fixed
+
+- Day/Night controls now locate the bundled preset helper relative to
+  `Service.qml`. Omarchy removes private source-directory metadata from
+  third-party plugin manifests, which previously caused
+  `sunsetr-ensure-preset: command not found` when forcing a mode.
+
 ## [0.7.1] - 2026-09-02
 
 ### Changed
