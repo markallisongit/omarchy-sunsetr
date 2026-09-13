@@ -309,8 +309,14 @@ Item {
       // without this the response is an empty, "successful" (exit 0) body.
       // --connect-timeout/--max-time: never let a stalled connection leave
       // this Process (and the running-guard above) stuck indefinitely.
-      geocodeProcess.command = ["bash", "-lc",
-        "curl -sfL -A 'omarchy-sunsetr-plugin' --connect-timeout 3 --max-time 5 " + shQuote(url)]
+      // Pin curl rather than resolving it through bash's ambient PATH.
+      // --max-filesize is enforced while bytes are received (including
+      // responses without Content-Length on curl >= 8.4), bounding what the
+      // StdioCollector below can ever retain. Curl exits non-zero when the
+      // limit is exceeded, so onExited rejects the partial response; malformed
+      // JSON is rejected by the guarded JSON.parse below.
+      geocodeProcess.command = ["/usr/bin/curl", "-sfL", "-A", "omarchy-sunsetr-plugin",
+        "--connect-timeout", "3", "--max-time", "5", "--max-filesize", "65536", url]
       geocodeProcess.running = true
     }
   }

@@ -251,7 +251,14 @@ BarWidget {
 
   function startGeocode() {
     root.geocodeActiveQuery = root.geocodePendingQuery
-    geocodeProc.command = ["curl", "-fsS", "--max-time", "5",
+    // Pin curl rather than resolving it through the shell's ambient PATH.
+    // --max-filesize is enforced by curl while bytes are received (including
+    // responses without Content-Length on curl >= 8.4), so StdioCollector can
+    // never accumulate an unbounded response in the shell. An over-limit
+    // transfer exits non-zero and is discarded by onExited below; malformed
+    // JSON is rejected by parseForwardGeocodingResults.
+    geocodeProc.command = ["/usr/bin/curl", "-fsS", "--connect-timeout", "3",
+      "--max-time", "5", "--max-filesize", "65536",
       "https://geocoding-api.open-meteo.com/v1/search?name=" + encodeURIComponent(root.geocodeActiveQuery) + "&count=5&language=en&format=json"]
     geocodeProc.running = true
   }
