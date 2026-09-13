@@ -5,6 +5,16 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.7.3] - 2026-09-13
+
+### Fixed
+
+- Open-Meteo and BigDataCloud responses are now capped at 64 KiB by curl
+  before they enter QML's `StdioCollector`. Oversized transfers fail and are
+  discarded, while the existing parsers reject malformed JSON.
+- Both remote requests now execute the trusted absolute `/usr/bin/curl` path
+  instead of resolving `curl` through the ambient `PATH`.
+
 ## [0.7.2] - 2026-09-09
 
 ### Fixed
